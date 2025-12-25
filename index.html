@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動くピアノ譜面</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@40,700,1,0" />
+    <style>
+        /* 画面全体のスクロールを禁止してアプリ感を出す */
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Flexboxコンテナ：縦方向に並べる */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* UIエリア：中身に応じた高さ、または固定高 */
+        .ui-header {
+            padding: 1rem;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Canvasエリア：残りの空間をすべて占有 */
+        .canvas-container {
+            flex-grow: 1; /* これが重要：残りの空間を埋める */
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block; /* 余計な隙間を消す */
+            width: 100%;
+            height: 100%;
+            touch-action: pan-x pan-y;
+        }
+    </style>
+    <script src="script.js" type="module" defer></script>
+  </head>
+  <body>
+    <div class="app-container">
+        <header class="ui-header">
+          <input type="file" id="midi-open" name="midi-open" accept=".mid" />
+          <div>
+            <button id="play-button"><span class="material-symbols-outlined">play_arrow</span></button>
+            <button id="stop-button"><span class="material-symbols-outlined">stop</span></button>
+          </div>
+          <div>
+            <label style="font-size:medium"><ruby>音量<rt>おんりょう</rt></ruby>:</label>
+            <input type="range" id="volume-slider" min="0.0" max="1.0" step="0.01"/>
+          </div>
+          <div>
+            <label ><ruby>再生位置<rt>さいせいいち</rt></ruby>(<ruby>小節<rt>しょうせつ</rt></ruby>):</label>
+            <label type="number" id="bar-label">0</label>
+            <input type="range" id="bar-slider", min="0" max="1" value="0" step="1"/>
+          </div>
+          <div>
+            <label style="font-size:medium"><ruby>表示量<rt>ひょうじりょう</rt></ruby>:</label>
+            <input type="range" id="display-slider" min="1.0" max="5.0" step="0.1"/>
+          </div>
+        </header>
+        <main class="canvas-container" id="container">
+            <canvas id="canvas"></canvas>
+        </main>
+    </div>
+  </body>
+</html>
