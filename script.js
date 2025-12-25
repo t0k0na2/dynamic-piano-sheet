@@ -89,12 +89,13 @@ init().then((wasm) => {
 
   canvas.ondrop = (ev) => {
     ev.preventDefault();
-
+    const dt = new DataTransfer();
     if (ev.dataTransfer.items) {
       [...ev.dataTransfer.items].forEach(async (item, i) => {
         if (item.kind === "file") {
           const file = item.getAsFile();
           load_midi(file);
+          dt.items.add(file);
         }
       });
     } 
@@ -102,8 +103,10 @@ init().then((wasm) => {
     {
       [...ev.dataTransfer.files].forEach(async (file, i) => {
         load_midi(file);
+        dt.items.add(file);
       });
     }
+    midi_open.files = dt.files;
   }
 
   canvas.ondragover = (ev) => {
