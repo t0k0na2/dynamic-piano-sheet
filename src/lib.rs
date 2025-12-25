@@ -398,11 +398,12 @@ impl MidiPlayer{
         }
 
         // ノート描画
-        const TRACK_COLORS: [&str; 4] = ["#4682B4", "#E66101", "#009E73", "#7B4173"];
+        const TRACK_FILL_COLORS: [&str; 4] = ["#4682B4", "#E66101", "#009E73", "#7B4173"];
+        const TRACK_STROKE_COLORS: [&str; 4] = ["#266294", "#C64101", "#007E53", "#5B2153"];
         for track_no in 0..self.num_tracks{
-            let color_index = (track_no as usize % TRACK_COLORS.len()) as usize;
-            context.set_stroke_style_str(TRACK_COLORS[color_index]);
-            context.set_fill_style_str(TRACK_COLORS[color_index]);
+            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
             for note in self.notes.iter(){
                 if note.track() != track_no{
                     continue;
