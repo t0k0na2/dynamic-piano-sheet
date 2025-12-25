@@ -19,8 +19,8 @@
         .app-container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            width: 100vw;
+            height: 100dvh;
+            width: 100dvw;
         }
 
         /* UIエリア：中身に応じた高さ、または固定高 */
@@ -40,11 +40,9 @@
         }
 
         canvas {
-            position: relative;
-            width: 98%;
-            height: 98%;
-            left: 1%;
-            top: 1%;
+            display: block; /* 余計な隙間を消す */
+            width: 100%;
+            height: 100%;
             touch-action: pan-x pan-y;
         }
     </style>
