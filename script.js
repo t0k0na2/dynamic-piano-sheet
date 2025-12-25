@@ -32,12 +32,10 @@ init().then((wasm) => {
   });
   volume_slider.value = midiPlayer.volume();
 
-  function load_midi(file){
-    midiPlayer.load_midi(file).then(() =>{
-      bar_slider.max = midiPlayer.num_bars() - 1;
-    }).catch((err) => {
-      alert("MIDIファイルの読み込みに失敗しました");
-    });
+  let requested_midi_file = null;
+
+  async function load_midi(file){
+    requested_midi_file = file;
   }
 
   const midi_open = document.getElementById("midi-open");
@@ -114,9 +112,20 @@ init().then((wasm) => {
 
   let animationId = null;
   let lastTime = 0;
-  const renderLoop = (time) => {
+  const renderLoop = async (time) => {
     if (!lastTime)
       lastTime = time;
+    
+    if (requested_midi_file !== null) {
+      const file = requested_midi_file;
+      requested_midi_file = null;
+      await midiPlayer.load_midi(file).then(() =>{
+        bar_slider.max = midiPlayer.num_bars() - 1;
+      }).catch((err) => {
+        alert("MIDIファイルの読み込みに失敗しました");
+      });
+    }
+
     const deltaTime = time - lastTime;
     lastTime = time;
     midiPlayer.tick(deltaTime);
