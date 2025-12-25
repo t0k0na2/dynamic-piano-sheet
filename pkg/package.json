@@ -1,0 +1,21 @@
+{
+  "name": "dynamic_piano_sheet",
+  "type": "module",
+  "description": "Dynamic sheet music for piano performance",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/t0k0na2/dynamic-piano-sheet"
+  },
+  "files": [
+    "dynamic_piano_sheet_bg.wasm",
+    "dynamic_piano_sheet.js",
+    "dynamic_piano_sheet.d.ts"
+  ],
+  "main": "dynamic_piano_sheet.js",
+  "types": "dynamic_piano_sheet.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
