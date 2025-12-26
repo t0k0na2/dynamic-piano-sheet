@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_midiplayer_free: (a: number, b: number) => void;
 export const midiplayer_current_bar: (a: number) => number;
+export const midiplayer_current_playback_time: (a: number) => number;
 export const midiplayer_load_midi: (a: number, b: any) => any;
 export const midiplayer_new: () => [number, number, number];
 export const midiplayer_num_bars: (a: number) => number;
@@ -12,8 +13,10 @@ export const midiplayer_render: (a: number, b: any, c: number, d: number, e: num
 export const midiplayer_seek_bar: (a: number, b: number, c: number) => void;
 export const midiplayer_seek_time: (a: number, b: number, c: number) => void;
 export const midiplayer_set_display_range: (a: number, b: number) => void;
+export const midiplayer_set_loop_bars: (a: number, b: number, c: number) => void;
 export const midiplayer_set_volume: (a: number, b: number) => void;
 export const midiplayer_skip: (a: number, b: number, c: number) => void;
+export const midiplayer_song_length: (a: number) => number;
 export const midiplayer_stop: (a: number) => void;
 export const midiplayer_tick: (a: number, b: number) => [number, number];
 export const midiplayer_volume: (a: number) => number;

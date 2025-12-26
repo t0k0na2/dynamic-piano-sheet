@@ -263,10 +263,31 @@ export class MidiPlayer {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    song_length() {
+        const ret = wasm.midiplayer_song_length(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} start_bar
+     * @param {number} end_bar
+     */
+    set_loop_bars(start_bar, end_bar) {
+        wasm.midiplayer_set_loop_bars(this.__wbg_ptr, start_bar, end_bar);
+    }
+    /**
      * @param {number} range_sec
      */
     set_display_range(range_sec) {
         wasm.midiplayer_set_display_range(this.__wbg_ptr, range_sec);
+    }
+    /**
+     * @returns {number}
+     */
+    current_playback_time() {
+        const ret = wasm.midiplayer_current_playback_time(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {MidiPlayer}

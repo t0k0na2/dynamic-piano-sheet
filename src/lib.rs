@@ -194,6 +194,8 @@ pub struct MidiPlayer{
     playing: bool,
     display_range_sec: f64,
     num_tracks: u8,
+    loop_start_bar: usize,
+    loop_end_bar: usize,
 }
 
 #[wasm_bindgen]
@@ -223,6 +225,8 @@ impl MidiPlayer{
             playing: false,
             display_range_sec: 3.0,
             num_tracks: 0,
+            loop_start_bar: 0,
+            loop_end_bar: 0,
         })
     }
 
@@ -248,6 +252,17 @@ impl MidiPlayer{
         Ok(())
     }
 
+    pub fn current_playback_time(&self) -> f64{
+        self.current_time
+    }
+
+    pub fn song_length(&self) -> f64{
+        match self.bars.last() {
+            Some(bar) => bar.end_time(),
+            None => 0.0,
+        }
+    }
+
     pub fn play(&mut self){
         if self.ready() == false{
             return;
@@ -262,6 +277,11 @@ impl MidiPlayer{
 
     pub fn ready(&self) -> bool{
         self.notes.len() > 0 && self.bars.len() > 0
+    }
+
+    pub fn set_loop_bars(&mut self, start_bar: usize, end_bar: usize){   
+        self.loop_start_bar = start_bar;
+        self.loop_end_bar = end_bar;
     }
 
     pub fn num_bars(&self) -> usize{
@@ -306,7 +326,7 @@ impl MidiPlayer{
         if clear_sounds {
             self.sound_sources.clear();
         }
-        self.current_time = time;
+        self.current_time = time.clamp(0.0, self.song_length());
     }
 
     pub fn skip(&mut self, delta: f64, clear_sounds:bool){
@@ -327,16 +347,25 @@ impl MidiPlayer{
 
         for note in self.notes.iter(){
             if self.current_time <= note.on_time() && note.on_time() < self.current_time + delta_sec{
-                let start_time = self.audio_context.current_time() + (self.current_time + delta_sec - note.on_time());
+                let start_time = self.audio_context.current_time() + (note.on_time() - self.current_time);
                 let end_time = start_time + (note.off_time() - note.on_time());
                 self.sound_sources.push(SoundSource::new(&self.audio_context, &self.comp, note.key(), note.velocity(), start_time, end_time)?);
             }
         }
 
         self.current_time += delta_sec; 
+        
+        if self.loop_end_bar > self.loop_start_bar {
+            if self.current_time >= self.bars[self.loop_end_bar].end_time(){
+                let loop_start_time = self.bars[self.loop_start_bar].begin_time() - (self.current_time - self.bars[self.loop_end_bar].end_time());
+                self.seek_time(loop_start_time, true);
+            }
+        }
 
-        if self.current_bar() >= self.bars.len() {
+
+        if self.current_time >= self.song_length() {
             self.playing = false;
+            self.current_time = self.song_length() - 0.0001;
         }
 
         Ok(())
@@ -396,27 +425,22 @@ impl MidiPlayer{
                 context.fill_text("おわり", rect.right() - 2.0, end_bar_pos - 2.0)?;
             }
         }
-
-        // ノート描画
+        
         const TRACK_FILL_COLORS: [&str; 4] = ["#4682B4", "#E66101", "#009E73", "#7B4173"];
         const TRACK_STROKE_COLORS: [&str; 4] = ["#266294", "#C64101", "#007E53", "#5B2153"];
+
+        // ノート描画
+        let diplay_notes: Vec<&Note> = self.notes.iter().filter(|note| note.on_time() <= display_end_sec && display_start_sec <= note.off_time() && min_key <= note.key() && note.key() <= max_key).collect();
+
         for track_no in 0..self.num_tracks{
             let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
             context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
             context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
-            for note in self.notes.iter(){
+            for note in diplay_notes.iter(){
                 if note.track() != track_no{
                     continue;
                 }
-
-                if note.key() < min_key || note.key() > max_key{
-                    continue;
-                }
-
-                if note.on_time() > display_end_sec || note.off_time() < display_start_sec{
-                    continue;
-                }
-
+                
                 let area = &key_areas[(note.key() - min_key) as usize];
                 let note_top = current_time_pos - (note.off_time() - self.current_time) * pixel_per_sec;
                 let note_height = current_time_pos - (note.on_time() - self.current_time) * pixel_per_sec - note_top;
@@ -430,6 +454,7 @@ impl MidiPlayer{
             }
         }
         
+        let playing_diplay_notes: Vec<&Note> = self.notes.iter().filter(|note| note.on_time() <= self.current_time && self.current_time <= note.off_time() && min_key <= note.key() && note.key() <= max_key).collect();
 
         // 白鍵
         let white_note_height = keybord_height;
@@ -450,6 +475,30 @@ impl MidiPlayer{
             }
         }
 
+        // 再生している白鍵
+        for track_no in 0..self.num_tracks{
+            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+            for note in playing_diplay_notes.iter(){
+                if note.track() != track_no{
+                    continue;
+                }
+                match note.key() % 12{
+                0 | 2 | 4 | 5 | 7 | 9 | 11 => {
+                    let area = &key_areas[(note.key() - min_key) as usize];
+                    let top = area.bottom() - white_note_height;
+                    context.fill_rect(area.left(), top, area.width(), white_note_height);
+                    context.begin_path();
+                    context.move_to(area.left(), top);
+                    context.line_to(area.left(), area.bottom());
+                    context.stroke();
+                },
+                _ => (),
+            }
+            }
+        }
+
         // 黒鍵
         let black_note_height = keybord_height * 0.6;
         context.set_fill_style_str("black");
@@ -460,6 +509,25 @@ impl MidiPlayer{
                     context.fill_rect(area.left(), area.bottom() - white_note_height, area.width(), black_note_height);
                 },
                 _ => (),
+            }
+        }
+
+        // 再生している黒鍵
+        for track_no in 0..self.num_tracks{
+            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+            for note in playing_diplay_notes.iter(){
+                if note.track() != track_no{
+                    continue;
+                }
+                match note.key() % 12{
+                1 | 3 | 6 | 8 | 10 => {
+                    let area = &key_areas[(note.key() - min_key) as usize];
+                    context.fill_rect(area.left(), area.bottom() - white_note_height, area.width(), black_note_height);
+                },
+                _ => (),
+            }
             }
         }
 

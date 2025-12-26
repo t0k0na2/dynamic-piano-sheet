@@ -7,7 +7,10 @@ export class MidiPlayer {
   [Symbol.dispose](): void;
   set_volume(volume: number): void;
   current_bar(): number;
+  song_length(): number;
+  set_loop_bars(start_bar: number, end_bar: number): void;
   set_display_range(range_sec: number): void;
+  current_playback_time(): number;
   static new(): MidiPlayer;
   play(): void;
   skip(delta: number, clear_sounds: boolean): void;
@@ -28,6 +31,7 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_midiplayer_free: (a: number, b: number) => void;
   readonly midiplayer_current_bar: (a: number) => number;
+  readonly midiplayer_current_playback_time: (a: number) => number;
   readonly midiplayer_load_midi: (a: number, b: any) => any;
   readonly midiplayer_new: () => [number, number, number];
   readonly midiplayer_num_bars: (a: number) => number;
@@ -37,8 +41,10 @@ export interface InitOutput {
   readonly midiplayer_seek_bar: (a: number, b: number, c: number) => void;
   readonly midiplayer_seek_time: (a: number, b: number, c: number) => void;
   readonly midiplayer_set_display_range: (a: number, b: number) => void;
+  readonly midiplayer_set_loop_bars: (a: number, b: number, c: number) => void;
   readonly midiplayer_set_volume: (a: number, b: number) => void;
   readonly midiplayer_skip: (a: number, b: number, c: number) => void;
+  readonly midiplayer_song_length: (a: number) => number;
   readonly midiplayer_stop: (a: number) => void;
   readonly midiplayer_tick: (a: number, b: number) => [number, number];
   readonly midiplayer_volume: (a: number) => number;

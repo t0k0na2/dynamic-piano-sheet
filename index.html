@@ -39,6 +39,10 @@
             overflow: hidden;
         }
 
+        .bar-input {
+            width: 3rem;
+        }
+
         canvas {
             display: block; /* 余計な隙間を消す */
             width: 100%;
@@ -57,7 +61,7 @@
             <button id="stop-button"><span class="material-symbols-outlined">stop</span></button>
           </div>
           <div>
-            <label style="font-size:medium"><ruby>音量<rt>おんりょう</rt></ruby>:</label>
+            <label ><ruby>音量<rt>おんりょう</rt></ruby>:</label>
             <input type="range" id="volume-slider" min="0.0" max="1.0" step="0.01"/>
           </div>
           <div>
@@ -66,8 +70,15 @@
             <input type="range" id="bar-slider", min="0" max="1" value="0" step="1"/>
           </div>
           <div>
-            <label style="font-size:medium"><ruby>表示量<rt>ひょうじりょう</rt></ruby>:</label>
-            <input type="range" id="display-slider" min="1.0" max="5.0" step="0.1"/>
+            <label ><ruby>表示量<rt>ひょうじりょう</rt></ruby>:</label>
+            <input type="range" id="display-slider" min="1.0" max="10.0" step="0.1"/>
+          </div>
+          <div>
+            <input type="checkbox" id="enable-loop">
+            <label >ループ(<ruby>小節<rt>しょうせつ</rt></ruby>):</label>
+            <input type="number" class="bar-input" id="loop-start-bar" value="1" min="1" step="1"/>
+            <label >～</label>
+            <input type="number" class="bar-input" id="loop-end-bar" value="1" min="1" step="1"/>
           </div>
         </header>
         <main class="canvas-container" id="container">
