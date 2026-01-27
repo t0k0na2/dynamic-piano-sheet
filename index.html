@@ -51,21 +51,10 @@
       </div>
 
       <!-- Volume -->
-      <div class="control-group">
+      <div class="control-group group-bg">
         <label for="volume-slider"><span class="material-symbols-outlined" title="Volume" data-i18n-title="vol"
             style="font-size: 1.2rem; vertical-align: middle;">volume_up</span></label>
         <input type="range" id="volume-slider" min="0.0" max="1.0" step="0.01" style="width: 80px;" />
-      </div>
-
-      <!-- Sound Source -->
-      <div class="control-group">
-        <span class="material-symbols-outlined" title="Sound Source" data-i18n-title="sound_source"
-          style="font-size: 1.2rem; color: #ccc;">piano</span>
-        <select id="sound-source-select" style="font-size: 0.9rem; padding: 2px;">
-          <option value="Analog">Analog</option>
-          <option value="FM">FM</option>
-          <option value="Origin">Origin</option>
-        </select>
       </div>
 
       <!-- Progress / Bars -->
@@ -77,7 +66,7 @@
       </div>
 
       <!-- Zoom -->
-      <div class="control-group">
+      <div class="control-group group-bg">
         <span class="material-symbols-outlined" title="Zoom" data-i18n-title="zoom"
           style="font-size: 1.2rem; color: #ccc;">aspect_ratio</span>
         <div style="display: flex; align-items: center; gap: 2px;">
@@ -87,8 +76,19 @@
         </div>
       </div>
 
+      <!-- Sound Source -->
+      <div class="control-group group-bg">
+        <span class="material-symbols-outlined" title="Sound Source" data-i18n-title="sound_source"
+          style="font-size: 1.2rem; color: #ccc;">music_note</span>
+        <div id="sound-source-radios" style="display: flex; gap: 4px;">
+          <input type="radio" name="sound-source" value="Analog" checked style="cursor: pointer;">
+          <input type="radio" name="sound-source" value="FM" style="cursor: pointer;">
+          <input type="radio" name="sound-source" value="Origin" style="cursor: pointer;">
+        </div>
+      </div>
+
       <!-- Loop Controls -->
-      <div class="control-group compact">
+      <div class="control-group compact group-bg">
         <div style="display: flex; align-items: center; gap: 4px;">
           <input type="checkbox" id="enable-loop">
           <label for="enable-loop" title="Loop" data-i18n-title="loop"><span class="material-symbols-outlined"

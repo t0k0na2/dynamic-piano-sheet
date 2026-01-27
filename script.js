@@ -62,13 +62,14 @@ init().then((wasm) => {
   });
   volume_slider.value = midi_player.volume();
 
-  const sound_source_select = document.getElementById("sound-source-select");
-  sound_source_select.addEventListener('change', (event) => {
-    const selected = event.target.value;
-    const type = SynthType[selected];
-    if (type !== undefined) {
-      midi_player.set_sound_source(type);
-    }
+  document.querySelectorAll('input[name="sound-source"]').forEach((radio) => {
+    radio.addEventListener('change', (event) => {
+      const selected = event.target.value;
+      const type = SynthType[selected];
+      if (type !== undefined) {
+        midi_player.set_sound_source(type);
+      }
+    });
   });
 
   let requested_midi_file = null;
