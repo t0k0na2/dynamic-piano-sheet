@@ -57,6 +57,17 @@
         <input type="range" id="volume-slider" min="0.0" max="1.0" step="0.01" style="width: 80px;" />
       </div>
 
+      <!-- Sound Source -->
+      <div class="control-group">
+        <span class="material-symbols-outlined" title="Sound Source" data-i18n-title="sound_source"
+          style="font-size: 1.2rem; color: #ccc;">piano</span>
+        <select id="sound-source-select" style="font-size: 0.9rem; padding: 2px;">
+          <option value="Analog">Analog</option>
+          <option value="FM">FM</option>
+          <option value="Origin">Origin</option>
+        </select>
+      </div>
+
       <!-- Progress / Bars -->
       <div class="control-group" style="gap: 2px;">
         <span class="material-symbols-outlined" title="Position" data-i18n-title="pos"
@@ -145,6 +156,7 @@
         play: "再生",
         stop: "停止",
         vol: "音量",
+        sound_source: "音源",
         manual_title: "マニュアル",
         manual_desc: "MIDIを読み込んで表示・再生するアプリです",
         manual_basic_title: "基本的な手順",
@@ -168,6 +180,7 @@
         play: "Play",
         stop: "Stop",
         vol: "Volume",
+        sound_source: "Sound Source",
         manual_title: "Manual",
         manual_desc: "This app displays and plays MIDI files.",
         manual_basic_title: "Basic Steps",

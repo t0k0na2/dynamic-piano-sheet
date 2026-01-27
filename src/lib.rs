@@ -2,8 +2,8 @@ mod utils;
 mod rectangle;
 mod note;
 mod bar;
-mod synth;
-use synth::SoundSource;
+pub mod synth;
+use synth::{SoundSource, SynthType};
 use bar::Bar;
 use note::Note;
 use rectangle::Rectangle;
@@ -100,8 +100,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String>{
                                 if vel > 0 {
                                     let note_id = notes.len();
                                     notes.push(Note::new(current_time, -1.0, key.as_int(), vel.as_int(), i as u8));
-                                    if let Some(_) = playing_notes.insert(hash_key, note_id){
-                                        return Err(format!("Error NoteOnが重複しました。"));
+                                    if let Some(id) = playing_notes.insert(hash_key, note_id){
+                                        notes[id].set_off_time(current_time);
                                     }
                                 }else{
                                     // vel0はNoteOff扱い?
@@ -128,8 +128,12 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String>{
                                 track_state.ended = true;
                             },
                             MetaMessage::TimeSignature(num, denom, _ , _) =>{
-                                ticks_per_bar = ticks_per_beat as usize / (2u32.pow(denom as u32) / 4) as usize * num as usize;   
-                                remain_bar_ticks = ticks_per_bar;
+                                if denom != 0{
+                                    ticks_per_bar = (ticks_per_beat as f64 / (2u32.pow(denom as u32) as f64 / 4.0) as f64 * num as f64) as usize;   
+                                    remain_bar_ticks = ticks_per_bar;
+                                }
+                                else{
+                                }
                             },
                             _ => (),
                         }
@@ -196,6 +200,7 @@ pub struct MidiPlayer{
     num_tracks: u8,
     loop_start_bar: usize,
     loop_end_bar: usize,
+    synth_type: SynthType,
 }
 
 #[wasm_bindgen]
@@ -227,7 +232,12 @@ impl MidiPlayer{
             num_tracks: 0,
             loop_start_bar: 0,
             loop_end_bar: 0,
+            synth_type: SynthType::Analog, // Default to Analog
         })
+    }
+
+    pub fn set_sound_source(&mut self, synth_type: SynthType){
+        self.synth_type = synth_type;
     }
 
     pub async fn load_midi(&mut self, file: &File) -> Result<(), JsValue>{
@@ -345,11 +355,12 @@ impl MidiPlayer{
         }
         self.sound_sources.retain(|source| !source.finished());
 
+        let play_reserve_buf_sec = delta_sec;
         for note in self.notes.iter(){
-            if self.current_time <= note.on_time() && note.on_time() < self.current_time + delta_sec{
+            if self.current_time <= note.on_time() && note.on_time() < self.current_time + play_reserve_buf_sec{
                 let start_time = self.audio_context.current_time() + (note.on_time() - self.current_time);
                 let end_time = start_time + (note.off_time() - note.on_time());
-                self.sound_sources.push(SoundSource::new(&self.audio_context, &self.comp, note.key(), note.velocity(), start_time, end_time)?);
+                self.sound_sources.push(SoundSource::new(&self.audio_context, &self.comp, note.key(), note.velocity(), start_time, end_time, self.synth_type)?);
             }
         }
 

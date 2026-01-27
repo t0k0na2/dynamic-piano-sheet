@@ -1,4 +1,4 @@
-import init, { MidiPlayer } from "./pkg/dynamic_piano_sheet.js";
+import init, { MidiPlayer, SynthType } from "./pkg/dynamic_piano_sheet.js";
 init().then((wasm) => {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
@@ -61,6 +61,15 @@ init().then((wasm) => {
     midi_player.set_volume(volume_slider.valueAsNumber);
   });
   volume_slider.value = midi_player.volume();
+
+  const sound_source_select = document.getElementById("sound-source-select");
+  sound_source_select.addEventListener('change', (event) => {
+    const selected = event.target.value;
+    const type = SynthType[selected];
+    if (type !== undefined) {
+      midi_player.set_sound_source(type);
+    }
+  });
 
   let requested_midi_file = null;
 
@@ -162,7 +171,7 @@ init().then((wasm) => {
         loop_start_bar_input.max = midi_player.num_bars();
         loop_end_bar_input.max = midi_player.num_bars();
       }).catch((err) => {
-        alert("MIDIファイルの読み込みに失敗しました");
+        alert("MIDIファイルの読み込みに失敗しました\n" + err);
       });
     }
 
