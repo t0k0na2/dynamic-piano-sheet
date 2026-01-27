@@ -9,6 +9,7 @@ export class MidiPlayer {
   current_bar(): number;
   song_length(): number;
   set_loop_bars(start_bar: number, end_bar: number): void;
+  set_sound_source(synth_type: SynthType): void;
   set_display_range(range_sec: number): void;
   current_playback_time(): number;
   static new(): MidiPlayer;
@@ -23,6 +24,12 @@ export class MidiPlayer {
   seek_bar(bar: number, clear_sounds: boolean): void;
   load_midi(file: File): Promise<void>;
   seek_time(time: number, clear_sounds: boolean): void;
+}
+
+export enum SynthType {
+  Analog = 0,
+  FM = 1,
+  Origin = 2,
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -42,6 +49,7 @@ export interface InitOutput {
   readonly midiplayer_seek_time: (a: number, b: number, c: number) => void;
   readonly midiplayer_set_display_range: (a: number, b: number) => void;
   readonly midiplayer_set_loop_bars: (a: number, b: number, c: number) => void;
+  readonly midiplayer_set_sound_source: (a: number, b: number) => void;
   readonly midiplayer_set_volume: (a: number, b: number) => void;
   readonly midiplayer_skip: (a: number, b: number, c: number) => void;
   readonly midiplayer_song_length: (a: number) => number;
@@ -51,12 +59,12 @@ export interface InitOutput {
   readonly wasm_bindgen__convert__closures_____invoke__hce19deebc5ffd07f: (a: number, b: number, c: any) => void;
   readonly wasm_bindgen__closure__destroy__hda381aeee11983f2: (a: number, b: number) => void;
   readonly wasm_bindgen__convert__closures_____invoke__h868dfb7b2863349d: (a: number, b: number, c: any, d: any) => void;
-  readonly __wbindgen_malloc: (a: number, b: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly __wbindgen_start: () => void;
 }

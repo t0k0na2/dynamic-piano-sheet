@@ -1,6 +1,15 @@
 # dynamic-piano-sheet
 ピアノ演奏のための動く譜面アプリ
 
+# アプリ公開ページ
+
+https://dynamic-piano-sheet.pages.dev/
+
+旧ページ
+https://t0k0na2.github.io/dynamic-piano-sheet/
+
+
+
 # ビルド手順
 
 ## ローカルサーバー起動
