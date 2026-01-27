@@ -1,0 +1,287 @@
+:root {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --panel-bg: rgba(30, 30, 30, 0.6);
+    --panel-border: rgba(255, 255, 255, 0.1);
+    --accent-color: #bb86fc;
+    --accent-hover: #9b6dd8;
+    --glass-blur: 12px;
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --radius: 12px;
+}
+
+body,
+html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    width: 100dvw;
+    position: relative;
+}
+
+.canvas-container {
+    flex-grow: 1;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+/* Floating UI Overlay using Glassmorphism */
+.ui-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--panel-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-bottom: 1px solid var(--panel-border);
+    padding: 8px 16px;
+    z-index: 10;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Header/Title overlay if needed? Maybe just keep it minimal. */
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-group label {
+    font-size: 0.8rem;
+    white-space: nowrap;
+    color: #ccc;
+}
+
+button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+button:active {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+button .material-symbols-outlined {
+    font-size: 1.1rem;
+}
+
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    height: 4px;
+    border-radius: 2px;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+input[type="number"],
+input[type="file"] {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 0.9rem;
+}
+
+.custom-file-upload {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.custom-file-upload:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: var(--accent-color);
+    color: #fff;
+    box-shadow: 0 0 8px rgba(187, 134, 252, 0.3);
+}
+
+.custom-file-upload .material-symbols-outlined {
+    font-size: 1.2rem;
+}
+
+.bar-input {
+    width: 3rem;
+    text-align: center;
+}
+
+
+/* Ruby text tweaks for legibility */
+ruby {
+    display: inline-flex;
+    flex-direction: column-reverse;
+    vertical-align: bottom;
+    align-items: center;
+}
+
+rt {
+    font-size: 0.6em;
+    line-height: 1;
+    margin-bottom: 0px;
+    color: #aaa;
+}
+
+/* Manual Overlay */
+.manual-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.manual-overlay[style*="display: flex"] {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.manual-content {
+    background: rgba(30, 30, 30, 0.95);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 30px;
+    max-width: 600px;
+    width: 100%;
+    position: relative;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    color: var(--text-color);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.manual-content h2 {
+    margin-top: 0;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 10px;
+}
+
+.manual-content h3 {
+    margin-top: 20px;
+    font-size: 1.1rem;
+    color: var(--accent-color);
+}
+
+.manual-content ul li {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.close-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    color: #aaa;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.close-button:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 800px) {
+    .ui-overlay {
+        justify-content: flex-start;
+        overflow-x: auto;
+        white-space: nowrap;
+        flex-wrap: nowrap;
+        padding-bottom: 12px;
+        /* Scrollbar space */
+    }
+}
+
+
+
+@media (min-width: 801px) {
+    .help-container {
+        position: absolute;
+        left: 16px;
+    }
+}
