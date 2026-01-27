@@ -1,4 +1,4 @@
-import init, {MidiPlayer } from "./pkg/dynamic_piano_sheet.js";
+import init, { MidiPlayer } from "./pkg/dynamic_piano_sheet.js";
 init().then((wasm) => {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
@@ -6,8 +6,8 @@ init().then((wasm) => {
   const midi_player = MidiPlayer.new();
 
   function resizeCanvas() {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
   }
 
   window.addEventListener('load', resizeCanvas);
@@ -18,13 +18,17 @@ init().then((wasm) => {
   const loop_start_bar_input = document.getElementById("loop-start-bar");
   const loop_end_bar_input = document.getElementById("loop-end-bar");
 
+  const loop_inputs = document.getElementById("loop-inputs");
+
   function update_loop_settings() {
     if (loop_checkbox.checked) {
       const start_bar = Math.max(1, Math.min(loop_start_bar_input.valueAsNumber, midi_player.num_bars()));
       const end_bar = Math.max(start_bar, Math.min(loop_end_bar_input.valueAsNumber, midi_player.num_bars()));
       midi_player.set_loop_bars(start_bar - 1, end_bar - 1);
+      loop_inputs.style.display = "flex";
     } else {
       midi_player.set_loop_bars(0, 0);
+      loop_inputs.style.display = "none";
     }
   }
 
@@ -44,7 +48,7 @@ init().then((wasm) => {
   display_slider.addEventListener('input', (event) => {
     midi_player.set_display_range(display_slider.valueAsNumber);
   });
-  
+
   const bar_slider = document.getElementById("bar-slider");
   bar_slider.addEventListener('input', (event) => {
     const bar_number = bar_slider.valueAsNumber;
@@ -60,7 +64,7 @@ init().then((wasm) => {
 
   let requested_midi_file = null;
 
-  async function load_midi(file){
+  async function load_midi(file) {
     requested_midi_file = file;
   }
 
@@ -74,7 +78,7 @@ init().then((wasm) => {
 
   const play_button = document.getElementById("play-button");
   play_button.addEventListener('click', (event) => {
-    if( midi_player.ready())
+    if (midi_player.ready())
       midi_player.play();
     else
       alert("MIDIファイルを選択してください");
@@ -86,34 +90,34 @@ init().then((wasm) => {
   });
 
   let canvasHold = false;
-  canvas.onpointerdown = (e) =>{
-      if(midi_player){
-          e.preventDefault();
-          canvasHold = true;
-      }
+  canvas.onpointerdown = (e) => {
+    if (midi_player) {
+      e.preventDefault();
+      canvasHold = true;
+    }
   }
 
-  canvas.onpointermove = (e) =>{
-      if(canvasHold){
-          e.preventDefault();
-          midi_player.skip(e.movementY * display_slider.valueAsNumber / canvas.height);
-      }
+  canvas.onpointermove = (e) => {
+    if (canvasHold) {
+      e.preventDefault();
+      midi_player.skip(e.movementY * display_slider.valueAsNumber / canvas.height);
+    }
   }
 
-  canvas.onpointerup = (e) =>{
-      if(canvasHold){
-          e.preventDefault();
-          canvasHold = false;
-      }
+  canvas.onpointerup = (e) => {
+    if (canvasHold) {
+      e.preventDefault();
+      canvasHold = false;
+    }
   }
-  canvas.onpointercancel = (e) =>{
-      if(canvasHold){
-          e.preventDefault();
-          canvasHold = false;
-      }
+  canvas.onpointercancel = (e) => {
+    if (canvasHold) {
+      e.preventDefault();
+      canvasHold = false;
+    }
   }
 
-  canvas.onwheel = (e) =>{
+  canvas.onwheel = (e) => {
     e.preventDefault();
     midi_player.skip(e.deltaY * -1 * display_slider.valueAsNumber / canvas.height);
   }
@@ -129,9 +133,8 @@ init().then((wasm) => {
           dt.items.add(file);
         }
       });
-    } 
-    else
-    {
+    }
+    else {
       [...ev.dataTransfer.files].forEach(async (file, i) => {
         load_midi(file);
         dt.items.add(file);
@@ -141,7 +144,7 @@ init().then((wasm) => {
   }
 
   canvas.ondragover = (ev) => {
-      ev.preventDefault();
+    ev.preventDefault();
   }
 
   let animationId = null;
@@ -149,12 +152,12 @@ init().then((wasm) => {
   const renderLoop = async (time) => {
     if (!lastTime)
       lastTime = time;
-    
+
     // MIDIファイルの読み込み要求があればここで処理、読み込み中に割り込みでrenderloopが回るとmidi_playerが例外を発生することがあるので
     if (requested_midi_file !== null) {
       const file = requested_midi_file;
       requested_midi_file = null;
-      await midi_player.load_midi(file).then(() =>{
+      await midi_player.load_midi(file).then(() => {
         bar_slider.max = midi_player.num_bars() - 1;
         loop_start_bar_input.max = midi_player.num_bars();
         loop_end_bar_input.max = midi_player.num_bars();
@@ -174,5 +177,8 @@ init().then((wasm) => {
     animationId = requestAnimationFrame(renderLoop);
   };
 
+
+
+  update_loop_settings();
   renderLoop();
 });
