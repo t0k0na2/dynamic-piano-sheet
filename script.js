@@ -215,6 +215,23 @@ init().then((wasm) => {
 
 
 
+  // テスト用にexample.midを自動読み込み
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    fetch('example.mid')
+      .then(response => {
+        if (response.ok) {
+          return response.blob();
+        }
+      })
+      .then(blob => {
+        if (blob) {
+          const file = new File([blob], "example.mid", { type: "audio/midi" });
+          load_midi(file);
+        }
+      })
+      .catch(err => console.log("Auto-load skipped:", err));
+  }
+
   update_loop_settings();
   renderLoop();
 });
