@@ -62,6 +62,14 @@ init().then((wasm) => {
   });
   volume_slider.value = midi_player.volume();
 
+  const speed_slider = document.getElementById("speed-slider");
+  const speed_label = document.getElementById("speed-label");
+  let playbackSpeed = 1.0;
+  speed_slider.addEventListener('input', (event) => {
+    playbackSpeed = speed_slider.valueAsNumber;
+    speed_label.textContent = playbackSpeed.toFixed(1) + "x";
+  });
+
   document.querySelectorAll('input[name="sound-source"]').forEach((radio) => {
     radio.addEventListener('change', (event) => {
       const selected = event.target.value;
@@ -178,7 +186,7 @@ init().then((wasm) => {
 
     const deltaTime = time - lastTime;
     lastTime = time;
-    midi_player.tick(deltaTime);
+    midi_player.tick(deltaTime * playbackSpeed);
     midi_player.render(ctx, 0, 0, canvas.width, canvas.height);
 
     bar_slider.value = midi_player.current_bar();

@@ -4,7 +4,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dynamic Piano Sheet</title>
+  <title>Dynamic Piano Sheet - MIDI Player for Piano Practice</title>
+  <meta name="description"
+    content="A web-based MIDI player with a dynamic piano roll view, designed for piano practice. Supports Analog, FM, and Origin synthesis engines. MIDIプレイヤー、ピアノ練習、動く譜面アプリ。">
+  <meta name="keywords"
+    content="MIDI, Player, Piano Practice, ピアノ練習, 楽譜, Dynamic Piano Sheet, Web Audio API, Rust, WASM">
+  <meta property="og:title" content="Dynamic Piano Sheet - MIDI Player for Piano Practice">
+  <meta property="og:description"
+    content="Visualize and play MIDI files with a dynamic piano roll. Perfect for piano practice and music visualization. MIDIファイルを読み込んで表示・再生するWebアプリです。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://dynamic-piano-sheet.pages.dev/">
   <link rel="icon" href="data:,">
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
@@ -58,11 +67,11 @@
       </div>
 
       <!-- Progress / Bars -->
-      <div class="control-group" style="gap: 2px;">
+      <div class="control-group group-bg" style="gap: 2px;">
         <span class="material-symbols-outlined" title="Position" data-i18n-title="pos"
           style="font-size: 1.2rem; color: #ccc;">location_on</span>
-        <label type="number" id="bar-label" style="min-width: 40px; text-align: right;">0</label>
         <input type="range" id="bar-slider" min="0" max="1" value="0" step="1" style="width: 100px;" />
+        <label type="number" id="bar-label" style="min-width: text-align: right;">0</label>
       </div>
 
       <!-- Zoom -->
@@ -74,6 +83,14 @@
           <input type="range" id="display-slider" min="1.0" max="10.0" step="0.1" style="width: 80px;" />
           <span class="material-symbols-outlined" style="font-size: 1rem;">zoom_in</span>
         </div>
+      </div>
+
+      <!-- Speed -->
+      <div class="control-group group-bg">
+        <span class="material-symbols-outlined" title="Speed" data-i18n-title="speed"
+          style="font-size: 1.2rem; color: #ccc;">speed</span>
+        <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0" style="width: 80px;" />
+        <label id="speed-label" style="min-width: 30px; text-align: left;">1.0x</label>
       </div>
 
       <!-- Sound Source -->
@@ -142,6 +159,14 @@
           <li data-i18n="manual_loop_2">ループチェックを有効にすると、小節番号を打ち込むUIが表示されるので、ループ開始と終了の小節番号を入力すると、その間をループ再生します</li>
         </ul>
       </section>
+
+      <section>
+        <h3 data-i18n="manual_speed_title">再生速度変更</h3>
+        <p data-i18n="manual_speed_desc">再生速度を変更できます</p>
+        <ul>
+          <li data-i18n="manual_speed_1">速度変更スライダーで変更 (0.5x ~ 2.0x)</li>
+        </ul>
+      </section>
     </div>
   </div>
 
@@ -157,6 +182,7 @@
         stop: "停止",
         vol: "音量",
         sound_source: "音源",
+        speed: "速度",
         manual_title: "マニュアル",
         manual_desc: "MIDIを読み込んで表示・再生するアプリです",
         manual_basic_title: "基本的な手順",
@@ -170,7 +196,10 @@
         manual_loop_title: "ループ機能",
         manual_loop_desc: "ループ機能は以下の方法で可能です",
         manual_loop_1: "ループチェックボタンで再生のループ有効化",
-        manual_loop_2: "ループチェックを有効にすると、小節番号を打ち込むUIが表示されるので、ループ開始と終了の小節番号を入力すると、その間をループ再生します"
+        manual_loop_2: "ループチェックを有効にすると、小節番号を打ち込むUIが表示されるので、ループ開始と終了の小節番号を入力すると、その間をループ再生します",
+        manual_speed_title: "再生速度変更",
+        manual_speed_desc: "再生速度を変更できます",
+        manual_speed_1: "速度変更スライダーで変更 (0.5x ~ 2.0x)"
       },
       en: {
         load_midi: "Load MIDI",
@@ -181,6 +210,7 @@
         stop: "Stop",
         vol: "Volume",
         sound_source: "Sound Source",
+        speed: "Speed",
         manual_title: "Manual",
         manual_desc: "This app displays and plays MIDI files.",
         manual_basic_title: "Basic Steps",
@@ -194,7 +224,10 @@
         manual_loop_title: "Loop Function",
         manual_loop_desc: "To use the loop function:",
         manual_loop_1: "Enable the loop checkbox.",
-        manual_loop_2: "When enabled, bar number inputs appear. Enter the start and end bars to loop between them."
+        manual_loop_2: "When enabled, bar number inputs appear. Enter the start and end bars to loop between them.",
+        manual_speed_title: "Playback Speed",
+        manual_speed_desc: "You can change the playback speed.",
+        manual_speed_1: "Use the speed slider (0.5x ~ 2.0x)."
       }
     };
 
