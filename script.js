@@ -3,8 +3,10 @@ init().then((wasm) => {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
 
+  // MIDIプレイヤーのインスタンスを作成
   const midi_player = MidiPlayer.new();
 
+  // キャンバスのサイズをウィンドウに合わせて調整
   function resizeCanvas() {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
@@ -20,6 +22,7 @@ init().then((wasm) => {
 
   const loop_inputs = document.getElementById("loop-inputs");
 
+  // ループ設定のUIロジックとMidiPlayerへの反映
   function update_loop_settings() {
     if (loop_checkbox.checked) {
       const start_bar = Math.max(1, Math.min(loop_start_bar_input.valueAsNumber, midi_player.num_bars()));
@@ -32,6 +35,7 @@ init().then((wasm) => {
     }
   }
 
+  // ループチェックボックスの変更イベント
   loop_checkbox.addEventListener('change', (event) => {
     update_loop_settings();
   });
@@ -44,11 +48,13 @@ init().then((wasm) => {
     update_loop_settings();
   });
 
+  // 表示範囲(ズーム)スライダー
   const display_slider = document.getElementById("display-slider");
   display_slider.addEventListener('input', (event) => {
     midi_player.set_display_range(display_slider.valueAsNumber);
   });
 
+  // 再生位置(小節)スライダー
   const bar_slider = document.getElementById("bar-slider");
   bar_slider.addEventListener('input', (event) => {
     const bar_number = bar_slider.valueAsNumber;
@@ -56,12 +62,14 @@ init().then((wasm) => {
   });
   const bar_label = document.getElementById("bar-label");
 
+  // 音量スライダー
   const volume_slider = document.getElementById("volume-slider");
   volume_slider.addEventListener('input', (event) => {
     midi_player.set_volume(volume_slider.valueAsNumber);
   });
   volume_slider.value = midi_player.volume();
 
+  // 再生速度スライダー
   const speed_slider = document.getElementById("speed-slider");
   const speed_label = document.getElementById("speed-label");
   let playbackSpeed = 1.0;
@@ -70,6 +78,7 @@ init().then((wasm) => {
     speed_label.textContent = playbackSpeed.toFixed(1) + "x";
   });
 
+  // 音源選択ラジオボタン
   document.querySelectorAll('input[name="sound-source"]').forEach((radio) => {
     radio.addEventListener('change', (event) => {
       const selected = event.target.value;
@@ -80,12 +89,14 @@ init().then((wasm) => {
     });
   });
 
+  // MIDIファイルの読み込み処理
   let requested_midi_file = null;
 
   async function load_midi(file) {
     requested_midi_file = file;
   }
 
+  // MIDIファイル選択イベント
   const midi_open = document.getElementById("midi-open");
   midi_open.addEventListener('change', async (event) => {
     const file = event.target.files[0];
@@ -94,6 +105,7 @@ init().then((wasm) => {
     load_midi(file);
   });
 
+  // 再生ボタン
   const play_button = document.getElementById("play-button");
   play_button.addEventListener('click', (event) => {
     if (midi_player.ready())
@@ -102,11 +114,13 @@ init().then((wasm) => {
       alert("MIDIファイルを選択してください");
   });
 
+  // 停止ボタン
   const stop_button = document.getElementById("stop-button");
   stop_button.addEventListener('click', (event) => {
     midi_player.stop();
   });
 
+  // キャンバス操作：ドラッグ開始
   let canvasHold = false;
   canvas.onpointerdown = (e) => {
     if (midi_player) {
@@ -115,6 +129,7 @@ init().then((wasm) => {
     }
   }
 
+  // キャンバス操作：ドラッグ中（スクロール）
   canvas.onpointermove = (e) => {
     if (canvasHold) {
       e.preventDefault();
@@ -135,11 +150,13 @@ init().then((wasm) => {
     }
   }
 
+  // キャンバス操作：ホイール（スクロール）
   canvas.onwheel = (e) => {
     e.preventDefault();
     midi_player.skip(e.deltaY * -1 * display_slider.valueAsNumber / canvas.height);
   }
 
+  // ドラッグ＆ドロップでのファイル読み込み
   canvas.ondrop = (ev) => {
     ev.preventDefault();
     const dt = new DataTransfer();
@@ -165,6 +182,7 @@ init().then((wasm) => {
     ev.preventDefault();
   }
 
+  // メインの描画ループ
   let animationId = null;
   let lastTime = 0;
   const renderLoop = async (time) => {

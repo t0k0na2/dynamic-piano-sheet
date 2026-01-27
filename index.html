@@ -33,16 +33,16 @@
     </main>
 
 
-    <!-- Floating UI Control Panel -->
+    <!-- フローティングUI操作パネル -->
     <header class="ui-overlay" id="ui-panel">
-      <!-- Help Button -->
+      <!-- ヘルプボタン -->
       <div class="control-group help-container">
         <button id="help-button" aria-label="Help" title="Help" data-i18n-title="manual_title">
           <span class="material-symbols-outlined">help</span>
         </button>
       </div>
 
-      <!-- File Input -->
+      <!-- ファイル入力 -->
       <div class="control-group">
         <input type="file" id="midi-open" name="midi-open" accept="audio/midi, .mid" style="display: none;" />
         <label for="midi-open" class="custom-file-upload" aria-label="Load MIDI File">
@@ -51,7 +51,7 @@
         </label>
       </div>
 
-      <!-- Playback Controls -->
+      <!-- 再生コントロール -->
       <div class="control-group compact">
         <button id="play-button" aria-label="Play" title="Play" data-i18n-title="play"><span
             class="material-symbols-outlined">play_arrow</span></button>
@@ -59,14 +59,14 @@
             class="material-symbols-outlined">stop</span></button>
       </div>
 
-      <!-- Volume -->
+      <!-- 音量 -->
       <div class="control-group group-bg">
         <label for="volume-slider"><span class="material-symbols-outlined" title="Volume" data-i18n-title="vol"
             style="font-size: 1.2rem; vertical-align: middle;">volume_up</span></label>
         <input type="range" id="volume-slider" min="0.0" max="1.0" step="0.01" style="width: 80px;" />
       </div>
 
-      <!-- Progress / Bars -->
+      <!-- 進捗 / 小節 -->
       <div class="control-group group-bg" style="gap: 2px;">
         <span class="material-symbols-outlined" title="Position" data-i18n-title="pos"
           style="font-size: 1.2rem; color: #ccc;">location_on</span>
@@ -74,7 +74,7 @@
         <label type="number" id="bar-label" style="min-width: text-align: right;">0</label>
       </div>
 
-      <!-- Zoom -->
+      <!-- ズーム -->
       <div class="control-group group-bg">
         <span class="material-symbols-outlined" title="Zoom" data-i18n-title="zoom"
           style="font-size: 1.2rem; color: #ccc;">aspect_ratio</span>
@@ -85,7 +85,7 @@
         </div>
       </div>
 
-      <!-- Speed -->
+      <!-- 再生速度 -->
       <div class="control-group group-bg">
         <span class="material-symbols-outlined" title="Speed" data-i18n-title="speed"
           style="font-size: 1.2rem; color: #ccc;">speed</span>
@@ -93,7 +93,7 @@
         <label id="speed-label" style="min-width: 30px; text-align: left;">1.0x</label>
       </div>
 
-      <!-- Sound Source -->
+      <!-- 音源 -->
       <div class="control-group group-bg">
         <span class="material-symbols-outlined" title="Sound Source" data-i18n-title="sound_source"
           style="font-size: 1.2rem; color: #ccc;">music_note</span>
@@ -104,7 +104,7 @@
         </div>
       </div>
 
-      <!-- Loop Controls -->
+      <!-- ループコントロール -->
       <div class="control-group compact group-bg">
         <div style="display: flex; align-items: center; gap: 4px;">
           <input type="checkbox" id="enable-loop">
@@ -118,10 +118,21 @@
         </div>
       </div>
 
+      <!-- GitHub Link -->
+      <div class="control-group github-container">
+        <a href="https://github.com/t0k0na2/dynamic-piano-sheet" target="_blank" rel="noopener noreferrer"
+          aria-label="GitHub" title="GitHub" class="icon-button">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path
+              d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+          </svg>
+        </a>
+      </div>
+
 
   </div>
 
-  <!-- Manual Overlay -->
+  <!-- マニュアルオーバーレイ -->
   <div id="manual-overlay" class="manual-overlay" style="display: none;">
     <div class="manual-content">
       <button id="manual-close" class="close-button" aria-label="Close">
@@ -233,14 +244,14 @@
 
     function setLanguage(lang) {
       document.documentElement.lang = lang;
-      // Text Content
+      // テキストコンテンツ
       document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
         if (translations[lang][key]) {
           el.textContent = translations[lang][key];
         }
       });
-      // Title Attribute
+      // タイトル属性
       document.querySelectorAll('[data-i18n-title]').forEach(el => {
         const key = el.getAttribute('data-i18n-title');
         if (translations[lang][key]) {
@@ -249,12 +260,12 @@
       });
     }
 
-    // Automatic detection
+    // 自動検出
     const userLang = navigator.language || navigator.userLanguage;
     const langCode = userLang.startsWith('ja') ? 'ja' : 'en';
     setLanguage(langCode);
 
-    // Manual Overlay Logic
+    // マニュアルオーバーレイのロジック
     const manualOverlay = document.getElementById('manual-overlay');
     const helpButton = document.getElementById('help-button');
     const closeButton = document.getElementById('manual-close');

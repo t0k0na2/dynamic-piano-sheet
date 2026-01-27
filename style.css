@@ -291,4 +291,34 @@ rt {
         position: absolute;
         left: 16px;
     }
+
+    .github-container {
+        position: absolute;
+        right: 16px;
+    }
+}
+
+.icon-button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.icon-button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.icon-button svg {
+    fill: currentColor;
+    width: 1.2rem;
+    height: 1.2rem;
 }
