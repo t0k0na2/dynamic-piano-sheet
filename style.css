@@ -286,17 +286,7 @@ rt {
 
 
 
-@media (min-width: 801px) {
-    .help-container {
-        position: absolute;
-        left: 16px;
-    }
 
-    .github-container {
-        position: absolute;
-        right: 16px;
-    }
-}
 
 .icon-button {
     background: rgba(255, 255, 255, 0.1);

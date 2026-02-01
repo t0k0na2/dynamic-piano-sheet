@@ -118,16 +118,7 @@
         </div>
       </div>
 
-      <!-- GitHub Link -->
-      <div class="control-group github-container">
-        <a href="https://github.com/t0k0na2/dynamic-piano-sheet" target="_blank" rel="noopener noreferrer"
-          aria-label="GitHub" title="GitHub" class="icon-button">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-            <path
-              d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-          </svg>
-        </a>
-      </div>
+
 
 
   </div>
@@ -139,6 +130,28 @@
         <span class="material-symbols-outlined">close</span>
       </button>
       <h2 data-i18n="manual_title">マニュアル</h2>
+
+      <!-- External Links -->
+      <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: flex-end;">
+        <button id="contact-button" class="icon-button" aria-label="Contact" title="Contact"
+          data-i18n-title="contact_title">
+          <span class="material-symbols-outlined">mail</span>
+        </button>
+        <a href="https://github.com/t0k0na2/dynamic-piano-sheet" target="_blank" rel="noopener noreferrer"
+          aria-label="GitHub" title="GitHub" class="icon-button">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path
+              d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+          </svg>
+        </a>
+        <a href="https://x.com/tokonatsu261501" target="_blank" rel="noopener noreferrer" aria-label="X (Twitter)"
+          title="X" class="icon-button">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path
+              d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+        </a>
+      </div>
 
       <section>
         <p data-i18n="manual_desc">MIDIを読み込んで表示・再生するアプリです</p>
@@ -181,6 +194,21 @@
     </div>
   </div>
 
+  <!-- お問い合わせオーバーレイ -->
+  <div id="contact-overlay" class="manual-overlay" style="display: none;">
+    <div class="manual-content" style="max-width: 700px; padding: 20px;">
+      <button id="contact-close" class="close-button" aria-label="Close">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+      <h2 data-i18n="contact_title" style="margin-bottom: 10px;">お問い合わせ</h2>
+      <div style="width: 100%; height: 510px; overflow: hidden;">
+        <iframe
+          src="https://docs.google.com/forms/d/e/1FAIpQLSeoryJCBkm0d27zigHiD2o5f2jGwBiQ37HG0oR2Gu95LSNpOw/viewform?embedded=true"
+          width="100%" height="100%" frameborder="0" marginheight="0" marginwidth="0">読み込んでいます…</iframe>
+      </div>
+    </div>
+  </div>
+
   <!-- Minimal i18n Script -->
   <script>
     const translations = {
@@ -193,7 +221,9 @@
         stop: "停止",
         vol: "音量",
         sound_source: "音源",
+
         speed: "速度",
+        contact_title: "お問い合わせ",
         manual_title: "マニュアル",
         manual_desc: "MIDIを読み込んで表示・再生するアプリです",
         manual_basic_title: "基本的な手順",
@@ -221,7 +251,9 @@
         stop: "Stop",
         vol: "Volume",
         sound_source: "Sound Source",
+
         speed: "Speed",
+        contact_title: "Contact",
         manual_title: "Manual",
         manual_desc: "This app displays and plays MIDI files.",
         manual_basic_title: "Basic Steps",
@@ -281,6 +313,25 @@
     manualOverlay.addEventListener('click', (e) => {
       if (e.target === manualOverlay) {
         manualOverlay.style.display = 'none';
+      }
+    });
+
+    // お問い合わせオーバーレイのロジック
+    const contactOverlay = document.getElementById('contact-overlay');
+    const contactButton = document.getElementById('contact-button');
+    const contactCloseButton = document.getElementById('contact-close');
+
+    contactButton.addEventListener('click', () => {
+      contactOverlay.style.display = 'flex';
+    });
+
+    contactCloseButton.addEventListener('click', () => {
+      contactOverlay.style.display = 'none';
+    });
+
+    contactOverlay.addEventListener('click', (e) => {
+      if (e.target === contactOverlay) {
+        contactOverlay.style.display = 'none';
       }
     });
   </script>
