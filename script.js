@@ -193,13 +193,15 @@ init().then((wasm) => {
     if (requested_midi_file !== null) {
       const file = requested_midi_file;
       requested_midi_file = null;
-      await midi_player.load_midi(file).then(() => {
+      try {
+        const buffer = await file.arrayBuffer();
+        midi_player.load_midi(new Uint8Array(buffer));
         bar_slider.max = midi_player.num_bars() - 1;
         loop_start_bar_input.max = midi_player.num_bars();
         loop_end_bar_input.max = midi_player.num_bars();
-      }).catch((err) => {
+      } catch (err) {
         alert("MIDIファイルの読み込みに失敗しました\n" + err);
-      });
+      }
     }
 
     const deltaTime = time - lastTime;
@@ -215,8 +217,9 @@ init().then((wasm) => {
 
 
 
-  // テスト用にexample.midを自動読み込み
+  // テスト用にexample.midとtest.sf2を自動読み込み
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    // MIDIの読み込み
     fetch('example.mid')
       .then(response => {
         if (response.ok) {
@@ -229,7 +232,28 @@ init().then((wasm) => {
           load_midi(file);
         }
       })
-      .catch(err => console.log("Auto-load skipped:", err));
+      .catch(err => console.log("Auto-load MIDI skipped:", err));
+
+    // SoundFontの読み込み
+    fetch('test.sf2')
+      .then(response => {
+        if (response.ok) {
+          return response.arrayBuffer();
+        }
+      })
+      .then(buffer => {
+        if (buffer) {
+          midi_player.load_soundfont(new Uint8Array(buffer));
+          // 読み込みに成功したらラジオボタンのUIを更新し、音源ソースを設定する
+          const sfRadio = document.querySelector('input[name="sound-source"][value="SoundFont"]');
+          if (sfRadio) {
+            sfRadio.checked = true;
+          }
+          midi_player.set_sound_source(SynthType.SoundFont);
+          console.log("Auto-loaded test.sf2 and set SynthType to SoundFont.");
+        }
+      })
+      .catch(err => console.log("Auto-load SoundFont skipped:", err));
   }
 
   update_loop_settings();

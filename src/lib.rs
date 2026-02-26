@@ -246,10 +246,8 @@ impl MidiPlayer{
         self.synth_type = synth_type;
     }
 
-    pub async fn load_midi(&mut self, file: &File) -> Result<(), JsValue>{
-        let buffer = JsFuture::from(file.array_buffer()).await?;
-        let bin = Uint8Array::new(&buffer).to_vec();
-        let parse_result = match parse_midi(&bin){
+    pub fn load_midi(&mut self, bin: &[u8]) -> Result<(), JsValue>{
+        let parse_result = match parse_midi(bin){
             Ok(parse_result) => {
                 parse_result
             },
@@ -268,11 +266,8 @@ impl MidiPlayer{
         Ok(())
     }
 
-    pub async fn load_soundfont(&mut self, file: &File) -> Result<(), JsValue> {
-        let buffer = JsFuture::from(file.array_buffer()).await?;
-        let bin = Uint8Array::new(&buffer).to_vec();
-        
-        let sf = match SoundFont::parse(&bin) {
+    pub fn load_soundfont(&mut self, bin: &[u8]) -> Result<(), JsValue> {
+        let sf = match SoundFont::parse(bin) {
             Ok(sf) => sf,
             Err(e) => {
                 return Err(JsValue::from_str(&format!("Error parsing SoundFont: {}", e)));
