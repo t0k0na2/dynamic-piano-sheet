@@ -37,15 +37,14 @@ impl SoundSource {
         end_time: f64,
         synth_type: SynthType,
         soundfont: Option<&SoundFont>,
-        audio_buffer: Option<&AudioBuffer>
     ) -> Result<SoundSource, JsValue> {
         match synth_type {
             SynthType::Analog => Self::new_analog(context, destination_target, key, velocity, start_time, end_time),
             SynthType::FM => Self::new_fm(context, destination_target, key, velocity, start_time, end_time),
             SynthType::Origin => Self::new_origin(context, destination_target, key, velocity, start_time, end_time),
             SynthType::SoundFont => {
-                if let (Some(sf), Some(buffer)) = (soundfont, audio_buffer) {
-                    Self::new_soundfont(context, destination_target, key, velocity, program, bank, start_time, end_time, sf, buffer)
+                if let Some(sf) = soundfont {
+                    Self::new_soundfont(context, destination_target, key, velocity, program, bank, start_time, end_time, sf)
                 } else {
                     // Fallback to Analog if SoundFont data is missing
                     Self::new_analog(context, destination_target, key, velocity, start_time, end_time)
@@ -245,7 +244,6 @@ impl SoundSource {
         start_time: f64,
         end_time: f64,
         soundfont: &SoundFont,
-        audio_buffer: &AudioBuffer
     ) -> Result<SoundSource, JsValue> {
         let adsr = Adsr{
             attack: 0.01,
@@ -258,37 +256,82 @@ impl SoundSource {
         let sus_begin = start_time + adsr.attack + adsr.decay;
         let end_time = end_time.max(sus_begin);
 
-        // TODO: 本来はsf2データ(soundfont)から key/velocity に合致する preset/instrument/sample (zone) を検索する
-        // 今回は単純化のため、全波形が入った audio_buffer を指定されたPlaybackRateで再生するモック的な実装から始める
-        // または、soundfont構造体から最初のサンプルの情報を探すだけでもよい
-        let sample_rate = if soundfont.sample_headers.len() > 0 {
-            soundfont.sample_headers[0].sample_rate as f32
+        // 使用するサンプルのインデックスを探す
+        let (sample_idx, overriding_root_key) = Self::find_sample_index(soundfont, bank, program, key, velocity).unwrap_or((0, None));
+
+        // sample_idxが範囲外の場合のフォールバック
+        let shdr = if sample_idx < soundfont.sample_headers.len() {
+            Some(&soundfont.sample_headers[sample_idx])
+        } else if !soundfont.sample_headers.is_empty() {
+            Some(&soundfont.sample_headers[0])
+        } else {
+            None
+        };
+
+        let sample_rate = if let Some(h) = shdr {
+            h.sample_rate as f32
         } else {
             44100.0
         };
 
-        // 元々のピッチ(キー)と再生したいピッチ(キー)の差から再生速度を決定する
-        // 最初のサンプルの original_pitch を基準にする単純な実装
-        let original_pitch = if soundfont.sample_headers.len() > 0 {
-            soundfont.sample_headers[0].original_pitch as f32
+        let mut original_pitch = if let Some(h) = shdr {
+            h.original_pitch as f32
         } else {
             60.0
         };
 
+        // overridingRootKey が指定されている場合は優先
+        if let Some(root_key) = overriding_root_key {
+            // SF2の仕様では0~127が有効とされている
+            if root_key <= 127 {
+                original_pitch = root_key as f32;
+            }
+        }
+
         let playback_rate = 2.0_f32.powf((key as f32 - original_pitch) / 12.0);
+
+        // 動的にAudioBufferを生成する
+        let audio_buffer = if let Some(h) = shdr {
+            let start_idx = h.start as usize;
+            let end_idx = h.end as usize;
+            let sample_len = end_idx.saturating_sub(start_idx);
+            
+            // 安全のためデータサイズの範囲内にする
+            let safe_start = start_idx.min(soundfont.sample_data.len());
+            let safe_end = end_idx.min(soundfont.sample_data.len()).max(safe_start);
+            let safe_len = safe_end - safe_start;
+
+            if safe_len > 0 {
+                let buffer = context.create_buffer(1, safe_len as u32, sample_rate)?;
+                let mut f32_data = vec![0.0f32; safe_len];
+                let src_data = &soundfont.sample_data[safe_start..safe_end];
+                for (i, &sample) in src_data.iter().enumerate() {
+                    f32_data[i] = sample as f32 / 32768.0;
+                }
+                buffer.copy_to_channel(&mut f32_data, 0)?;
+                Some(buffer)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // 1. AudioBufferSourceNode
         let source_node = context.create_buffer_source()?;
-        source_node.set_buffer(Some(audio_buffer));
+        if let Some(buf) = &audio_buffer {
+            source_node.set_buffer(Some(buf));
+        }
         source_node.playback_rate().set_value(playback_rate);
 
         // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
-        if soundfont.sample_headers.len() > 0 {
-            let shdr = &soundfont.sample_headers[0];
+        if let Some(h) = shdr {
             source_node.set_loop(true);
-            // end_loopやstart_loopはサンプル数(ワード単位)で格納されているため、秒数に変換
-            source_node.set_loop_start(shdr.start_loop as f64 / sample_rate as f64);
-            source_node.set_loop_end(shdr.end_loop as f64 / sample_rate as f64);
+            // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
+            let rel_loop_start = h.start_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
+            let rel_loop_end = h.end_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
+            source_node.set_loop_start(rel_loop_start);
+            source_node.set_loop_end(rel_loop_end);
         }
 
         // 2. VCA (Volume Envelope)
@@ -307,10 +350,9 @@ impl SoundSource {
         vca.connect_with_audio_node(destination_target)?;
 
         // Play
-        if soundfont.sample_headers.len() > 0 {
-            let shdr = &soundfont.sample_headers[0];
-            let offset_sec = shdr.start as f64 / sample_rate as f64;
-            source_node.start_with_when_and_grain_offset(start_time, offset_sec)?;
+        // AudioBufferを切り出しているのでオフセットを0にする
+        if let Some(_) = shdr {
+            source_node.start_with_when(start_time)?;
         } else {
             source_node.start_with_when(start_time)?;
         }
@@ -325,6 +367,116 @@ impl SoundSource {
             now_time: start_time,
             end_time: cleanup_time,
         })
+    }
+
+    // keyとvelocity、program(preset)、bankから一致するsample情報を取得する
+    fn find_sample_index(soundfont: &SoundFont, bank: u16, program: u8, key: u8, velocity: u8) -> Option<(usize, Option<u8>)> {
+        // 1. 該当のプリセットを検索
+        let preset_idx = soundfont.preset_headers.iter()
+            .position(|p| p.preset == program as u16 && p.bank == bank)
+            // 該当がなければ bank 変えずに program のみ、あるいは bank 0 にフォールバックなどを検討（ここでは柔軟にヒットさせる）
+            .or_else(|| soundfont.preset_headers.iter().position(|p| p.preset == program as u16))
+            .or_else(|| soundfont.preset_headers.iter().position(|p| p.preset == 0 && p.bank == 0))?;
+            
+        let pbag_start = soundfont.preset_headers[preset_idx].preset_bag_ndx as usize;
+        let pbag_end = soundfont.preset_headers.get(preset_idx + 1)
+            .map(|p| p.preset_bag_ndx as usize)
+            .unwrap_or(soundfont.preset_bags.len());
+
+        let mut matched_instrument_id = None;
+
+        // 2. プリセットから一致するゾーン（インストゥルメント）を検索
+        for b in pbag_start..pbag_end {
+            let gen_start = soundfont.preset_bags[b].gen_ndx as usize;
+            let gen_end = soundfont.preset_bags.get(b + 1)
+                .map(|bg| bg.gen_ndx as usize)
+                .unwrap_or(soundfont.preset_generators.len());
+
+            let mut key_in_range = true;
+            let mut vel_in_range = true;
+            let mut inst_id = None;
+
+            for g in gen_start..gen_end {
+                if let Some(generator) = soundfont.preset_generators.get(g) {
+                    match generator.gen_oper {
+                        43 => { // keyRange
+                            let lo = (generator.gen_amount & 0xFF) as u8;
+                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                            if key < lo || key > hi { key_in_range = false; }
+                        }
+                        44 => { // velRange
+                            let lo = (generator.gen_amount & 0xFF) as u8;
+                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                            if velocity < lo || velocity > hi { vel_in_range = false; }
+                        }
+                        41 => { // instrument
+                            inst_id = Some(generator.gen_amount as usize);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // 条件に一致かつインストゥルメントIDが見つかった場合
+            if key_in_range && vel_in_range {
+                if let Some(id) = inst_id {
+                    matched_instrument_id = Some(id);
+                    break;
+                }
+            }
+        }
+
+        let inst_id = matched_instrument_id?;
+
+        // 3. インストゥルメントから一致するサンプルを検索
+        let ibag_start = soundfont.instruments.get(inst_id)?.inst_bag_ndx as usize;
+        let ibag_end = soundfont.instruments.get(inst_id + 1)
+            .map(|i| i.inst_bag_ndx as usize)
+            .unwrap_or(soundfont.instrument_bags.len());
+
+        for b in ibag_start..ibag_end {
+            let gen_start = soundfont.instrument_bags.get(b)?.inst_gen_ndx as usize;
+            let gen_end = soundfont.instrument_bags.get(b + 1)
+                .map(|bg| bg.inst_gen_ndx as usize)
+                .unwrap_or(soundfont.instrument_generators.len());
+
+            let mut key_in_range = true;
+            let mut vel_in_range = true;
+            let mut sample_id = None;
+            let mut overriding_root_key = None;
+
+            for g in gen_start..gen_end {
+                if let Some(generator) = soundfont.instrument_generators.get(g) {
+                    match generator.gen_oper {
+                        43 => { // keyRange
+                            let lo = (generator.gen_amount & 0xFF) as u8;
+                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                            if key < lo || key > hi { key_in_range = false; }
+                        }
+                        44 => { // velRange
+                            let lo = (generator.gen_amount & 0xFF) as u8;
+                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                            if velocity < lo || velocity > hi { vel_in_range = false; }
+                        }
+                        53 => { // sampleID
+                            sample_id = Some(generator.gen_amount as usize);
+                        }
+                        58 => { // overridingRootKey
+                            overriding_root_key = Some(generator.gen_amount as u8);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            if key_in_range && vel_in_range {
+                if let Some(id) = sample_id {
+                    return Some((id, overriding_root_key));
+                }
+            }
+        }
+
+        None
     }
 
     fn velocity_to_ratio(velocity: u8) -> f64{

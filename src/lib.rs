@@ -217,7 +217,6 @@ pub struct MidiPlayer{
     loop_end_bar: usize,
     synth_type: SynthType,
     soundfont: Option<SoundFont>,
-    audio_buffer: Option<AudioBuffer>,
 }
 
 #[wasm_bindgen]
@@ -251,7 +250,6 @@ impl MidiPlayer{
             loop_end_bar: 0,
             synth_type: SynthType::Analog, // Default to Analog
             soundfont: None,
-            audio_buffer: None,
         })
     }
 
@@ -291,25 +289,7 @@ impl MidiPlayer{
             return Err(JsValue::from_str("No sample data in SoundFont"));
         }
 
-        let sample_rate = if sf.sample_headers.len() > 0 {
-            sf.sample_headers[0].sample_rate as f32
-        } else {
-            44100.0
-        };
-
-        let sample_data = &sf.sample_data;
-        let audio_buffer = self.audio_context.create_buffer(1, sample_data.len() as u32, sample_rate)?;
-        
-        // i16 to f32 (-1.0 ~ 1.0)
-        let mut f32_data = vec![0.0f32; sample_data.len()];
-        for (i, &sample) in sample_data.iter().enumerate() {
-            f32_data[i] = sample as f32 / 32768.0;
-        }
-        
-        audio_buffer.copy_to_channel(&mut f32_data, 0)?;
-
         self.soundfont = Some(sf);
-        self.audio_buffer = Some(audio_buffer);
 
         Ok(())
     }
@@ -422,8 +402,7 @@ impl MidiPlayer{
                     start_time, 
                     end_time, 
                     self.synth_type,
-                    self.soundfont.as_ref(),
-                    self.audio_buffer.as_ref()
+                    self.soundfont.as_ref()
                 )?);
             }
         }

@@ -412,6 +412,14 @@ mod tests {
             assert!(sf.preset_headers.len() > 0);
             assert!(sf.sample_headers.len() > 0);
             assert!(sf.sample_data.len() > 0);
+
+            sf.preset_headers.iter().for_each(|preset| {
+                println!("Preset p:{} b:{} name:{}", preset.preset, preset.bank, preset.name);
+            });
+
+            sf.sample_headers.iter().for_each(|sample| {
+                println!("Sample name:{} start:{} end:{} smpl_rate:{}", sample.name, sample.start, sample.end, sample.sample_rate);
+            });
             
             println!("Parsed SF2: {} presets, {} samples, {} waveform words", 
                 sf.preset_headers.len(), sf.sample_headers.len(), sf.sample_data.len());
