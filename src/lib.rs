@@ -48,6 +48,9 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String>{
         interval_ticks: u32,
         currrent_index: usize,
         ended: bool,
+        program: u8,
+        bank_msb: u8,
+        bank_lsb: u8,
     }
     let mut track_states: Vec<TrackState> = vec![TrackState::default(); smf.tracks.len()];
 
@@ -101,7 +104,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String>{
                                 let hash_key = (channel.as_int(), key.as_int());
                                 if vel > 0 {
                                     let note_id = notes.len();
-                                    notes.push(Note::new(current_time, -1.0, key.as_int(), vel.as_int(), i as u8));
+                                    notes.push(Note::new(current_time, -1.0, key.as_int(), vel.as_int(), i as u8, track_state.program, (track_state.bank_msb as u16) * 128 + track_state.bank_lsb as u16));
                                     if let Some(id) = playing_notes.insert(hash_key, note_id){
                                         notes[id].set_off_time(current_time);
                                     }
@@ -116,6 +119,16 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String>{
                                 let hash_key = (channel.as_int(), key.as_int());
                                 if let Some(id) = playing_notes.remove(&hash_key){
                                     notes[id].set_off_time(current_time);
+                                }
+                            },
+                            MidiMessage::ProgramChange { program } => {
+                                track_state.program = program.as_int();  
+                            },
+                            MidiMessage::Controller { controller, value } => {
+                                match controller.as_int(){
+                                    0 => track_state.bank_msb = u8::from(value),
+                                    32 => track_state.bank_lsb = u8::from(value),
+                                    _ => (),
                                 }
                             },
                             _ => (),
@@ -404,6 +417,8 @@ impl MidiPlayer{
                     &self.comp, 
                     note.key(), 
                     note.velocity(), 
+                    note.program(), 
+                    note.bank(), 
                     start_time, 
                     end_time, 
                     self.synth_type,

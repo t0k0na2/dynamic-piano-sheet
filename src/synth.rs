@@ -31,6 +31,8 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
+        program: u8,
+        bank: u16,
         start_time: f64,
         end_time: f64,
         synth_type: SynthType,
@@ -43,7 +45,7 @@ impl SoundSource {
             SynthType::Origin => Self::new_origin(context, destination_target, key, velocity, start_time, end_time),
             SynthType::SoundFont => {
                 if let (Some(sf), Some(buffer)) = (soundfont, audio_buffer) {
-                    Self::new_soundfont(context, destination_target, key, velocity, start_time, end_time, sf, buffer)
+                    Self::new_soundfont(context, destination_target, key, velocity, program, bank, start_time, end_time, sf, buffer)
                 } else {
                     // Fallback to Analog if SoundFont data is missing
                     Self::new_analog(context, destination_target, key, velocity, start_time, end_time)
@@ -238,6 +240,8 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
+        program: u8,
+        bank: u16,
         start_time: f64,
         end_time: f64,
         soundfont: &SoundFont,
