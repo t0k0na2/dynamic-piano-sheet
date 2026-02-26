@@ -3,6 +3,7 @@ mod rectangle;
 mod note;
 mod bar;
 pub mod synth;
+pub mod soundfont;
 use synth::{SoundSource, SynthType};
 use bar::Bar;
 use note::Note;
