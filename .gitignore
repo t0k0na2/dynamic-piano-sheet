@@ -20,3 +20,54 @@ Cargo.lock
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# -----------------------------------------------------------------------------
+# 1. Rust/Cargo関連 (必須)
+# -----------------------------------------------------------------------------
+# コンパイル結果、パッケージ、ロックファイル
+target/
+Cargo.lock
+
+# 2. Wasm-pack関連 (必須)
+# Wasm-packが生成するWasmファイルとJSバインディング
+pkg/
+
+# 3. Node.js/npm関連 (必須)
+# 依存関係、ビルドキャッシュ、パッケージロック
+node_modules/
+.npm/
+.yarn/
+.pnp.*
+.pnp.js
+
+# 4. ビルドキャッシュ (必須)
+# WebpackやRollupなどのビルドキャッシュ
+.cache/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+
+# 5. 環境変数 (必須)
+# 機密情報を含む可能性のあるファイル
+.env
+.env.local
+.env.*.local
+
+# 6. IDE/エディタ関連 (推奨)
+# 開発環境固有の設定ファイル
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# 7. テスト関連 (必須)
+# テスト実行時に生成されるファイル
+coverage/
+
+# 8. その他の生成ファイル
+# 一時ファイルやログ
+*.log
+*.tmp
+*.bak

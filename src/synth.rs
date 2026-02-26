@@ -1,12 +1,14 @@
+use crate::soundfont::SoundFont;
 use wasm_bindgen::prelude::*;
-use web_sys::{AudioNode, OscillatorType, BaseAudioContext, BiquadFilterType};
+use web_sys::{AudioNode, OscillatorType, BaseAudioContext, BiquadFilterType, AudioBuffer};
 
 #[wasm_bindgen]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SynthType {
     Analog,
     FM,
     Origin,
+    SoundFont,
 }
 
 #[derive(Clone, Copy)]
@@ -24,11 +26,29 @@ pub struct SoundSource {
 }
 
 impl SoundSource {
-    pub fn new(context: &BaseAudioContext, destination_target: &AudioNode, key: u8, velocity: u8, start_time: f64, end_time: f64, synth_type: SynthType) -> Result<SoundSource, JsValue> {
+    pub fn new(
+        context: &BaseAudioContext,
+        destination_target: &AudioNode,
+        key: u8,
+        velocity: u8,
+        start_time: f64,
+        end_time: f64,
+        synth_type: SynthType,
+        soundfont: Option<&SoundFont>,
+        audio_buffer: Option<&AudioBuffer>
+    ) -> Result<SoundSource, JsValue> {
         match synth_type {
             SynthType::Analog => Self::new_analog(context, destination_target, key, velocity, start_time, end_time),
             SynthType::FM => Self::new_fm(context, destination_target, key, velocity, start_time, end_time),
             SynthType::Origin => Self::new_origin(context, destination_target, key, velocity, start_time, end_time),
+            SynthType::SoundFont => {
+                if let (Some(sf), Some(buffer)) = (soundfont, audio_buffer) {
+                    Self::new_soundfont(context, destination_target, key, velocity, start_time, end_time, sf, buffer)
+                } else {
+                    // Fallback to Analog if SoundFont data is missing
+                    Self::new_analog(context, destination_target, key, velocity, start_time, end_time)
+                }
+            }
         }
     }
 
@@ -208,6 +228,96 @@ impl SoundSource {
 
         Ok(SoundSource {
             nodes: vec![vco.into(), vcf.into(), vca.into()],
+            now_time: start_time,
+            end_time: cleanup_time,
+        })
+    }
+
+    fn new_soundfont(
+        context: &BaseAudioContext,
+        destination_target: &AudioNode,
+        key: u8,
+        velocity: u8,
+        start_time: f64,
+        end_time: f64,
+        soundfont: &SoundFont,
+        audio_buffer: &AudioBuffer
+    ) -> Result<SoundSource, JsValue> {
+        let adsr = Adsr{
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.8,
+            release: 0.5,
+        };
+        let _freq = Self::midi_key_to_freq(key);
+        let vel_ratio = Self::velocity_to_ratio(velocity);
+        let sus_begin = start_time + adsr.attack + adsr.decay;
+        let end_time = end_time.max(sus_begin);
+
+        // TODO: 本来はsf2データ(soundfont)から key/velocity に合致する preset/instrument/sample (zone) を検索する
+        // 今回は単純化のため、全波形が入った audio_buffer を指定されたPlaybackRateで再生するモック的な実装から始める
+        // または、soundfont構造体から最初のサンプルの情報を探すだけでもよい
+        let sample_rate = if soundfont.sample_headers.len() > 0 {
+            soundfont.sample_headers[0].sample_rate as f32
+        } else {
+            44100.0
+        };
+
+        // 元々のピッチ(キー)と再生したいピッチ(キー)の差から再生速度を決定する
+        // 最初のサンプルの original_pitch を基準にする単純な実装
+        let original_pitch = if soundfont.sample_headers.len() > 0 {
+            soundfont.sample_headers[0].original_pitch as f32
+        } else {
+            60.0
+        };
+
+        let playback_rate = 2.0_f32.powf((key as f32 - original_pitch) / 12.0);
+
+        // 1. AudioBufferSourceNode
+        let source_node = context.create_buffer_source()?;
+        source_node.set_buffer(Some(audio_buffer));
+        source_node.playback_rate().set_value(playback_rate);
+
+        // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
+        if soundfont.sample_headers.len() > 0 {
+            let shdr = &soundfont.sample_headers[0];
+            source_node.set_loop(true);
+            // end_loopやstart_loopはサンプル数(ワード単位)で格納されているため、秒数に変換
+            source_node.set_loop_start(shdr.start_loop as f64 / sample_rate as f64);
+            source_node.set_loop_end(shdr.end_loop as f64 / sample_rate as f64);
+        }
+
+        // 2. VCA (Volume Envelope)
+        let vca = context.create_gain()?;
+        let vca_gain = vca.gain();
+        
+        vca_gain.set_value_at_time(0.0, start_time)?;
+        vca_gain.linear_ramp_to_value_at_time(vel_ratio as f32, start_time + adsr.attack)?;
+        let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
+        vca_gain.linear_ramp_to_value_at_time(vca_sus as f32, sus_begin)?;
+        vca_gain.set_value_at_time(vca_sus as f32, end_time)?;
+        vca_gain.linear_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
+
+        // Connection
+        source_node.connect_with_audio_node(&vca)?;
+        vca.connect_with_audio_node(destination_target)?;
+
+        // Play
+        if soundfont.sample_headers.len() > 0 {
+            let shdr = &soundfont.sample_headers[0];
+            let offset_sec = shdr.start as f64 / sample_rate as f64;
+            source_node.start_with_when_and_grain_offset(start_time, offset_sec)?;
+        } else {
+            source_node.start_with_when(start_time)?;
+        }
+        
+        #[allow(deprecated)]
+        source_node.stop_with_when(end_time + adsr.release + 0.1)?;
+
+        let cleanup_time = end_time + adsr.release + 0.2;
+
+        Ok(SoundSource {
+            nodes: vec![source_node.into(), vca.into()],
             now_time: start_time,
             end_time: cleanup_time,
         })
