@@ -11,7 +11,7 @@ use note::Note;
 use rectangle::Rectangle;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
+
 use js_sys::Uint8Array;
 
 use web_sys::{CanvasRenderingContext2d, File, AudioContext, DynamicsCompressorNode, GainNode, AudioBuffer};

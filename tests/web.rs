@@ -14,7 +14,7 @@ async fn test_sound_source_rendering() {
     // 2. Create the sound source
     // A4 (69), Velocity 100
     let destination = context.destination();
-    let _source = SoundSource::new(&context, &destination, 69, 100, 0, 0, 0.0, 1.0, SynthType::FM, None, None).unwrap();
+    let _source = SoundSource::new(&context, &destination, 69, 100, 0, 0, 0.0, 1.0, SynthType::FM, None).unwrap();
 
     // 3. Start Rendering
     let promise = context.start_rendering().unwrap();

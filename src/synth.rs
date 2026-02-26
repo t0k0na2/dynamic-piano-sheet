@@ -1,6 +1,6 @@
 use crate::soundfont::SoundFont;
 use wasm_bindgen::prelude::*;
-use web_sys::{AudioNode, OscillatorType, BaseAudioContext, BiquadFilterType, AudioBuffer};
+use web_sys::{AudioNode, BaseAudioContext, BiquadFilterType, OscillatorType};
 
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,7 +11,7 @@ pub enum SynthType {
     SoundFont,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Adsr {
     pub attack: f64,
     pub decay: f64,
@@ -39,22 +39,67 @@ impl SoundSource {
         soundfont: Option<&SoundFont>,
     ) -> Result<SoundSource, JsValue> {
         match synth_type {
-            SynthType::Analog => Self::new_analog(context, destination_target, key, velocity, start_time, end_time),
-            SynthType::FM => Self::new_fm(context, destination_target, key, velocity, start_time, end_time),
-            SynthType::Origin => Self::new_origin(context, destination_target, key, velocity, start_time, end_time),
+            SynthType::Analog => Self::new_analog(
+                context,
+                destination_target,
+                key,
+                velocity,
+                start_time,
+                end_time,
+            ),
+            SynthType::FM => Self::new_fm(
+                context,
+                destination_target,
+                key,
+                velocity,
+                start_time,
+                end_time,
+            ),
+            SynthType::Origin => Self::new_origin(
+                context,
+                destination_target,
+                key,
+                velocity,
+                start_time,
+                end_time,
+            ),
             SynthType::SoundFont => {
                 if let Some(sf) = soundfont {
-                    Self::new_soundfont(context, destination_target, key, velocity, program, bank, start_time, end_time, sf)
+                    Self::new_soundfont(
+                        context,
+                        destination_target,
+                        key,
+                        velocity,
+                        program,
+                        bank,
+                        start_time,
+                        end_time,
+                        sf,
+                    )
                 } else {
                     // Fallback to Analog if SoundFont data is missing
-                    Self::new_analog(context, destination_target, key, velocity, start_time, end_time)
+                    Self::new_analog(
+                        context,
+                        destination_target,
+                        key,
+                        velocity,
+                        start_time,
+                        end_time,
+                    )
                 }
             }
         }
     }
 
-    fn new_analog(context: &BaseAudioContext, destination_target: &AudioNode, key: u8, velocity: u8, start_time: f64, end_time: f64) -> Result<SoundSource, JsValue> {
-        let adsr = Adsr{
+    fn new_analog(
+        context: &BaseAudioContext,
+        destination_target: &AudioNode,
+        key: u8,
+        velocity: u8,
+        start_time: f64,
+        end_time: f64,
+    ) -> Result<SoundSource, JsValue> {
+        let adsr = Adsr {
             attack: 0.01,
             decay: 0.3,
             sustain: 0.4,
@@ -71,8 +116,10 @@ impl SoundSource {
         vco.frequency().set_value(freq as f32);
 
         // Pitch Envelope
-        vco.frequency().set_value_at_time((freq * 1.015) as f32, start_time)?;
-        vco.frequency().exponential_ramp_to_value_at_time(freq as f32, start_time + 0.08)?;
+        vco.frequency()
+            .set_value_at_time((freq * 1.015) as f32, start_time)?;
+        vco.frequency()
+            .exponential_ramp_to_value_at_time(freq as f32, start_time + 0.08)?;
 
         // 2. VCF
         let vcf = context.create_biquad_filter()?;
@@ -85,7 +132,7 @@ impl SoundSource {
         let vcf_freq = vcf.frequency();
         vcf_freq.set_value_at_time(base_freq as f32, start_time)?;
         vcf_freq.linear_ramp_to_value_at_time(peak_freq as f32, start_time + adsr.attack)?;
-        
+
         // Filter Sustain
         let vcf_sus = base_freq + (peak_freq - base_freq) * adsr.sustain * 0.5;
         let target_sus = if vcf_sus < 100.0 { 100.0 } else { vcf_sus };
@@ -96,7 +143,7 @@ impl SoundSource {
         // 3. VCA
         let vca = context.create_gain()?;
         let vca_gain = vca.gain();
-        
+
         vca_gain.set_value_at_time(0.0, start_time)?;
         vca_gain.linear_ramp_to_value_at_time(1.0 * velocity as f32, start_time + adsr.attack)?;
         let vca_sus = (adsr.sustain * velocity).max(0.0001);
@@ -123,11 +170,18 @@ impl SoundSource {
         })
     }
 
-    fn new_fm(context: &BaseAudioContext, destination_target: &AudioNode, key: u8, velocity: u8, start_time: f64, end_time: f64) -> Result<SoundSource, JsValue> {
+    fn new_fm(
+        context: &BaseAudioContext,
+        destination_target: &AudioNode,
+        key: u8,
+        velocity: u8,
+        start_time: f64,
+        end_time: f64,
+    ) -> Result<SoundSource, JsValue> {
         let freq = Self::midi_key_to_freq(key);
         let velocity = Self::velocity_to_ratio(velocity);
-        
-        let adsr = Adsr{
+
+        let adsr = Adsr {
             attack: 0.01,
             decay: 0.3,
             sustain: 0.4,
@@ -151,19 +205,32 @@ impl SoundSource {
 
         // 3. モジュレーターのエンベロープ（音色の変化）
         let index: f64 = 3.0; // FMの強さ
-        modulator_gain.gain().set_value_at_time((freq * index * velocity) as f32, start_time)?;
-        modulator_gain.gain().exponential_ramp_to_value_at_time(0.01 as f32, start_time + 0.3)?; 
+        modulator_gain
+            .gain()
+            .set_value_at_time((freq * index * velocity) as f32, start_time)?;
+        modulator_gain
+            .gain()
+            .exponential_ramp_to_value_at_time(0.01 as f32, start_time + 0.3)?;
 
         // 4. アンプのエンベロープ（音量の変化）
         amp_gain.gain().set_value_at_time(0.0, start_time)?;
-        amp_gain.gain().linear_ramp_to_value_at_time((velocity) as f32, start_time + adsr.attack)?; // Attack
-        amp_gain.gain().exponential_ramp_to_value_at_time((velocity * adsr.sustain) as f32, start_time + adsr.attack + adsr.decay)?;  // Decay
-        amp_gain.gain().set_value_at_time((velocity * adsr.sustain) as f32, end_time)?;  // Sustain
-        amp_gain.gain().exponential_ramp_to_value_at_time(0.0001 as f32, end_time + adsr.release)?;  // Release
+        amp_gain
+            .gain()
+            .linear_ramp_to_value_at_time((velocity) as f32, start_time + adsr.attack)?; // Attack
+        amp_gain.gain().exponential_ramp_to_value_at_time(
+            (velocity * adsr.sustain) as f32,
+            start_time + adsr.attack + adsr.decay,
+        )?; // Decay
+        amp_gain
+            .gain()
+            .set_value_at_time((velocity * adsr.sustain) as f32, end_time)?; // Sustain
+        amp_gain
+            .gain()
+            .exponential_ramp_to_value_at_time(0.0001 as f32, end_time + adsr.release)?; // Release
 
         // 5. 接続
         modulator.connect_with_audio_node(&modulator_gain)?;
-        modulator_gain.connect_with_audio_param(&carrier.frequency())?; 
+        modulator_gain.connect_with_audio_param(&carrier.frequency())?;
         carrier.connect_with_audio_node(&amp_gain)?;
         amp_gain.connect_with_audio_node(destination_target)?;
 
@@ -176,14 +243,26 @@ impl SoundSource {
         let cleanup_time = end_time + adsr.release + 0.2;
 
         Ok(SoundSource {
-            nodes: vec![carrier.into(), modulator.into(), amp_gain.into(), modulator_gain.into()],
+            nodes: vec![
+                carrier.into(),
+                modulator.into(),
+                amp_gain.into(),
+                modulator_gain.into(),
+            ],
             now_time: start_time,
             end_time: cleanup_time,
         })
     }
 
-    fn new_origin(context: &BaseAudioContext, destination_target: &AudioNode, key: u8, velocity: u8, start_time: f64, end_time: f64) -> Result<SoundSource, JsValue> {
-        let adsr = Adsr{
+    fn new_origin(
+        context: &BaseAudioContext,
+        destination_target: &AudioNode,
+        key: u8,
+        velocity: u8,
+        start_time: f64,
+        end_time: f64,
+    ) -> Result<SoundSource, JsValue> {
+        let adsr = Adsr {
             attack: 0.01,
             decay: 0.2,
             sustain: 0.5,
@@ -203,12 +282,13 @@ impl SoundSource {
         let vcf = context.create_biquad_filter()?;
         vcf.set_type(BiquadFilterType::Lowpass);
         vcf.frequency().set_value((freq * 4.0).min(10000.0) as f32);
-        vcf.frequency().linear_ramp_to_value_at_time((freq * 0.5) as f32, end_time)?;
+        vcf.frequency()
+            .linear_ramp_to_value_at_time((freq * 0.5) as f32, end_time)?;
 
         // 3. VCA
         let vca = context.create_gain()?;
         let vca_gain = vca.gain();
-        
+
         vca_gain.set_value_at_time(0.0, start_time)?;
         vca_gain.linear_ramp_to_value_at_time(velocity as f32, start_time + adsr.attack)?;
         vca_gain.linear_ramp_to_value_at_time((velocity * adsr.sustain) as f32, sus_begin)?;
@@ -245,19 +325,21 @@ impl SoundSource {
         end_time: f64,
         soundfont: &SoundFont,
     ) -> Result<SoundSource, JsValue> {
-        let adsr = Adsr{
+        let default_adsr = Adsr {
             attack: 0.01,
             decay: 0.2,
             sustain: 0.8,
             release: 0.5,
         };
-        let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity);
-        let sus_begin = start_time + adsr.attack + adsr.decay;
-        let end_time = end_time.max(sus_begin);
 
         // 使用するサンプルのインデックスを探す
-        let (sample_idx, overriding_root_key) = Self::find_sample_index(soundfont, bank, program, key, velocity).unwrap_or((0, None));
+        let (sample_idx, overriding_root_key, adsr) = Self::find_sample_index(
+            soundfont, bank, program, key, velocity,
+        )
+        .unwrap_or((0, None, default_adsr));
+
+        let _freq = Self::midi_key_to_freq(key);
+        let vel_ratio = Self::velocity_to_ratio(velocity);
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -294,8 +376,7 @@ impl SoundSource {
         let audio_buffer = if let Some(h) = shdr {
             let start_idx = h.start as usize;
             let end_idx = h.end as usize;
-            let sample_len = end_idx.saturating_sub(start_idx);
-            
+
             // 安全のためデータサイズの範囲内にする
             let safe_start = start_idx.min(soundfont.sample_data.len());
             let safe_end = end_idx.min(soundfont.sample_data.len()).max(safe_start);
@@ -337,13 +418,15 @@ impl SoundSource {
         // 2. VCA (Volume Envelope)
         let vca = context.create_gain()?;
         let vca_gain = vca.gain();
-        
-        vca_gain.set_value_at_time(0.0, start_time)?;
-        vca_gain.linear_ramp_to_value_at_time(vel_ratio as f32, start_time + adsr.attack)?;
+
+        vca_gain.set_value_at_time(0.0001, start_time)?;
+        vca_gain.exponential_ramp_to_value_at_time(vel_ratio as f32, start_time + adsr.attack)?;
         let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
-        vca_gain.linear_ramp_to_value_at_time(vca_sus as f32, sus_begin)?;
-        vca_gain.set_value_at_time(vca_sus as f32, end_time)?;
-        vca_gain.linear_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
+        vca_gain.exponential_ramp_to_value_at_time(
+            vca_sus as f32,
+            start_time + adsr.attack + adsr.decay,
+        )?;
+        vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
 
         // Connection
         source_node.connect_with_audio_node(&vca)?;
@@ -356,7 +439,7 @@ impl SoundSource {
         } else {
             source_node.start_with_when(start_time)?;
         }
-        
+
         #[allow(deprecated)]
         source_node.stop_with_when(end_time + adsr.release + 0.1)?;
 
@@ -370,46 +453,81 @@ impl SoundSource {
     }
 
     // keyとvelocity、program(preset)、bankから一致するsample情報を取得する
-    fn find_sample_index(soundfont: &SoundFont, bank: u16, program: u8, key: u8, velocity: u8) -> Option<(usize, Option<u8>)> {
+    fn find_sample_index(
+        soundfont: &SoundFont,
+        bank: u16,
+        program: u8,
+        key: u8,
+        velocity: u8,
+    ) -> Option<(usize, Option<u8>, Adsr)> {
         // 1. 該当のプリセットを検索
-        let preset_idx = soundfont.preset_headers.iter()
+        let preset_idx = soundfont
+            .preset_headers
+            .iter()
             .position(|p| p.preset == program as u16 && p.bank == bank)
             // 該当がなければ bank 変えずに program のみ、あるいは bank 0 にフォールバックなどを検討（ここでは柔軟にヒットさせる）
-            .or_else(|| soundfont.preset_headers.iter().position(|p| p.preset == program as u16))
-            .or_else(|| soundfont.preset_headers.iter().position(|p| p.preset == 0 && p.bank == 0))?;
-            
+            .or_else(|| {
+                soundfont
+                    .preset_headers
+                    .iter()
+                    .position(|p| p.preset == program as u16)
+            })
+            .or_else(|| {
+                soundfont
+                    .preset_headers
+                    .iter()
+                    .position(|p| p.preset == 0 && p.bank == 0)
+            })?;
+
         let pbag_start = soundfont.preset_headers[preset_idx].preset_bag_ndx as usize;
-        let pbag_end = soundfont.preset_headers.get(preset_idx + 1)
+        let pbag_end = soundfont
+            .preset_headers
+            .get(preset_idx + 1)
             .map(|p| p.preset_bag_ndx as usize)
             .unwrap_or(soundfont.preset_bags.len());
 
         let mut matched_instrument_id = None;
+        let mut preset_gens = [None; 60];
+        let mut p_global_gens = [None; 60];
 
         // 2. プリセットから一致するゾーン（インストゥルメント）を検索
         for b in pbag_start..pbag_end {
             let gen_start = soundfont.preset_bags[b].gen_ndx as usize;
-            let gen_end = soundfont.preset_bags.get(b + 1)
+            let gen_end = soundfont
+                .preset_bags
+                .get(b + 1)
                 .map(|bg| bg.gen_ndx as usize)
                 .unwrap_or(soundfont.preset_generators.len());
 
             let mut key_in_range = true;
             let mut vel_in_range = true;
             let mut inst_id = None;
+            let mut local_gens = [None; 60];
 
             for g in gen_start..gen_end {
                 if let Some(generator) = soundfont.preset_generators.get(g) {
+                    if (generator.gen_oper as usize) < 60 {
+                        local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
+                    }
                     match generator.gen_oper {
-                        43 => { // keyRange
+                        43 => {
+                            // keyRange
                             let lo = (generator.gen_amount & 0xFF) as u8;
                             let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if key < lo || key > hi { key_in_range = false; }
+                            if key < lo || key > hi {
+                                key_in_range = false;
+                            }
                         }
-                        44 => { // velRange
+                        44 => {
+                            // velRange
                             let lo = (generator.gen_amount & 0xFF) as u8;
                             let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if velocity < lo || velocity > hi { vel_in_range = false; }
+                            if velocity < lo || velocity > hi {
+                                vel_in_range = false;
+                            }
                         }
-                        41 => { // instrument
+                        41 => {
+                            // instrument
                             inst_id = Some(generator.gen_amount as usize);
                         }
                         _ => {}
@@ -417,10 +535,16 @@ impl SoundSource {
                 }
             }
 
+            if inst_id.is_none() && b == pbag_start {
+                p_global_gens = local_gens;
+                continue;
+            }
+
             // 条件に一致かつインストゥルメントIDが見つかった場合
             if key_in_range && vel_in_range {
                 if let Some(id) = inst_id {
                     matched_instrument_id = Some(id);
+                    preset_gens = local_gens;
                     break;
                 }
             }
@@ -430,13 +554,19 @@ impl SoundSource {
 
         // 3. インストゥルメントから一致するサンプルを検索
         let ibag_start = soundfont.instruments.get(inst_id)?.inst_bag_ndx as usize;
-        let ibag_end = soundfont.instruments.get(inst_id + 1)
+        let ibag_end = soundfont
+            .instruments
+            .get(inst_id + 1)
             .map(|i| i.inst_bag_ndx as usize)
             .unwrap_or(soundfont.instrument_bags.len());
 
+        let mut i_global_gens = [None; 60];
+
         for b in ibag_start..ibag_end {
             let gen_start = soundfont.instrument_bags.get(b)?.inst_gen_ndx as usize;
-            let gen_end = soundfont.instrument_bags.get(b + 1)
+            let gen_end = soundfont
+                .instrument_bags
+                .get(b + 1)
                 .map(|bg| bg.inst_gen_ndx as usize)
                 .unwrap_or(soundfont.instrument_generators.len());
 
@@ -444,24 +574,36 @@ impl SoundSource {
             let mut vel_in_range = true;
             let mut sample_id = None;
             let mut overriding_root_key = None;
+            let mut local_gens = [None; 60];
 
             for g in gen_start..gen_end {
                 if let Some(generator) = soundfont.instrument_generators.get(g) {
+                    if (generator.gen_oper as usize) < 60 {
+                        local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
+                    }
                     match generator.gen_oper {
-                        43 => { // keyRange
+                        43 => {
+                            // keyRange
                             let lo = (generator.gen_amount & 0xFF) as u8;
                             let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if key < lo || key > hi { key_in_range = false; }
+                            if key < lo || key > hi {
+                                key_in_range = false;
+                            }
                         }
-                        44 => { // velRange
+                        44 => {
+                            // velRange
                             let lo = (generator.gen_amount & 0xFF) as u8;
                             let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if velocity < lo || velocity > hi { vel_in_range = false; }
+                            if velocity < lo || velocity > hi {
+                                vel_in_range = false;
+                            }
                         }
-                        53 => { // sampleID
+                        53 => {
+                            // sampleID
                             sample_id = Some(generator.gen_amount as usize);
                         }
-                        58 => { // overridingRootKey
+                        58 => {
+                            // overridingRootKey
                             overriding_root_key = Some(generator.gen_amount as u8);
                         }
                         _ => {}
@@ -469,9 +611,42 @@ impl SoundSource {
                 }
             }
 
+            if sample_id.is_none() && b == ibag_start {
+                i_global_gens = local_gens;
+                continue;
+            }
+
             if key_in_range && vel_in_range {
                 if let Some(id) = sample_id {
-                    return Some((id, overriding_root_key));
+                    let get_gen = |oper: usize, default: i16| -> i16 {
+                        // Priority: Instrument Local > Instrument Global
+                        let inst_val = local_gens[oper].or(i_global_gens[oper]).unwrap_or(default);
+                        // Add Preset Local > Preset Global (default offset 0)
+                        let preset_val = preset_gens[oper].or(p_global_gens[oper]).unwrap_or(0);
+                        inst_val.saturating_add(preset_val)
+                    };
+
+                    let attack = get_gen(34, -12000);
+                    let decay = get_gen(36, -12000);
+                    let sustain = get_gen(37, 0);
+                    let release = get_gen(38, -12000);
+
+                    // 1200 cents = 1 octave = factor of 2
+                    let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);
+                    let decay_sec = 2.0_f64.powf(decay as f64 / 1200.0);
+                    let release_sec = 2.0_f64.powf(release as f64 / 1200.0);
+
+                    // sustain is in centibels of attenuation
+                    let sustain_level = 10.0_f64.powf(-(sustain as f64) / 200.0);
+
+                    let adsr = Adsr {
+                        attack: attack_sec.max(0.001),
+                        decay: decay_sec.max(0.001),
+                        sustain: sustain_level.clamp(0.0, 1.0),
+                        release: release_sec.max(0.001),
+                    };
+
+                    return Some((id, overriding_root_key, adsr));
                 }
             }
         }
@@ -479,7 +654,7 @@ impl SoundSource {
         None
     }
 
-    fn velocity_to_ratio(velocity: u8) -> f64{
+    fn velocity_to_ratio(velocity: u8) -> f64 {
         velocity as f64 / 127.0
     }
 
