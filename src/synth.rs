@@ -11,6 +11,15 @@ pub struct SampleOffsets {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct LfoParams {
+    pub delay: f64,
+    pub freq: f32,
+    pub to_pitch: f32,
+    pub to_filter: f32,
+    pub to_volume: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Adsr {
     pub delay: f64,
     pub attack: f64,
@@ -87,6 +96,8 @@ impl SoundSource {
             sample_offsets,
             coarse_tune,
             fine_tune,
+            mod_lfo,
+            vib_lfo,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -178,6 +189,48 @@ impl SoundSource {
         }
         source_node.playback_rate().set_value(playback_rate);
 
+        // -- LFO Setup --
+        let mut lfo_nodes = vec![];
+        let source_detune = source_node.detune();
+
+        let mut mod_lfo_osc = None;
+        if mod_lfo.to_pitch != 0.0 || mod_lfo.to_filter != 0.0 || mod_lfo.to_volume != 0.0 {
+            let osc = context.create_oscillator()?;
+            osc.set_type(web_sys::OscillatorType::Triangle);
+            osc.frequency().set_value(mod_lfo.freq);
+            mod_lfo_osc = Some(osc.clone());
+            lfo_nodes.push(osc.into());
+        }
+
+        let mut vib_lfo_osc = None;
+        if vib_lfo.to_pitch != 0.0 {
+            let osc = context.create_oscillator()?;
+            osc.set_type(web_sys::OscillatorType::Triangle);
+            osc.frequency().set_value(vib_lfo.freq);
+            vib_lfo_osc = Some(osc.clone());
+            lfo_nodes.push(osc.into());
+        }
+
+        if let Some(osc) = &mod_lfo_osc {
+            if mod_lfo.to_pitch != 0.0 {
+                let p_gain = context.create_gain()?;
+                p_gain.gain().set_value(mod_lfo.to_pitch);
+                osc.connect_with_audio_node(&p_gain)?;
+                p_gain.connect_with_audio_param(&source_detune)?;
+                lfo_nodes.push(p_gain.into());
+            }
+        }
+
+        if let Some(osc) = &vib_lfo_osc {
+            if vib_lfo.to_pitch != 0.0 {
+                let p_gain = context.create_gain()?;
+                p_gain.gain().set_value(vib_lfo.to_pitch);
+                osc.connect_with_audio_node(&p_gain)?;
+                p_gain.connect_with_audio_param(&source_detune)?;
+                lfo_nodes.push(p_gain.into());
+            }
+        }
+
         // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
         if let Some(h) = shdr {
             // sampleModes: 0 (no loop), 1 (loop continuously), 2 (no loop), 3 (loop for duration of key depression)
@@ -244,10 +297,48 @@ impl SoundSource {
         let q_db = filter_q / 10.0;
         filter.q().set_value(q_db);
 
+        if let Some(osc) = &mod_lfo_osc {
+            if mod_lfo.to_filter != 0.0 {
+                let f_gain = context.create_gain()?;
+                f_gain.gain().set_value(mod_lfo.to_filter);
+                osc.connect_with_audio_node(&f_gain)?;
+                f_gain.connect_with_audio_param(&filter.detune())?;
+                lfo_nodes.push(f_gain.into());
+            }
+        }
+
         // Connection
         source_node.connect_with_audio_node(&filter)?;
         filter.connect_with_audio_node(&vca)?;
-        vca.connect_with_audio_node(destination_target)?;
+
+        let tremor_depth = 1.0 - 10.0_f32.powf(-mod_lfo.to_volume / 200.0);
+        let mut tremolo_vca_node = None;
+        if let Some(osc) = &mod_lfo_osc {
+            if mod_lfo.to_volume > 0.0 && tremor_depth > 0.0 {
+                let vca_lfo_gain = context.create_gain()?;
+                vca_lfo_gain.gain().set_value(tremor_depth);
+
+                let tremolo_vca = context.create_gain()?;
+                tremolo_vca.gain().set_value(1.0);
+
+                osc.connect_with_audio_node(&vca_lfo_gain)?;
+                vca_lfo_gain.connect_with_audio_param(&tremolo_vca.gain())?;
+
+                vca.connect_with_audio_node(&tremolo_vca)?;
+
+                lfo_nodes.push(vca_lfo_gain.into());
+
+                let tremolo_vca_audio_node: web_sys::AudioNode = tremolo_vca.into();
+                lfo_nodes.push(tremolo_vca_audio_node.clone());
+                tremolo_vca_node = Some(tremolo_vca_audio_node);
+            }
+        }
+
+        if let Some(t_vca) = tremolo_vca_node {
+            t_vca.connect_with_audio_node(destination_target)?;
+        } else {
+            vca.connect_with_audio_node(destination_target)?;
+        }
 
         // Play
         // AudioBufferを切り出しているのでオフセットを0にする
@@ -260,10 +351,24 @@ impl SoundSource {
         #[allow(deprecated)]
         source_node.stop_with_when(end_time + adsr.release + 0.1)?;
 
+        if let Some(osc) = &mod_lfo_osc {
+            osc.start_with_when(start_time + mod_lfo.delay)?;
+            #[allow(deprecated)]
+            osc.stop_with_when(end_time + adsr.release + 0.1)?;
+        }
+        if let Some(osc) = &vib_lfo_osc {
+            osc.start_with_when(start_time + vib_lfo.delay)?;
+            #[allow(deprecated)]
+            osc.stop_with_when(end_time + adsr.release + 0.1)?;
+        }
+
         let cleanup_time = end_time + adsr.release + 0.2;
 
+        let mut final_nodes = vec![source_node.into(), filter.into(), vca.into()];
+        final_nodes.extend(lfo_nodes);
+
         Ok(SoundSource {
-            nodes: vec![source_node.into(), filter.into(), vca.into()],
+            nodes: final_nodes,
             now_time: start_time,
             end_time: cleanup_time,
         })
@@ -286,6 +391,8 @@ impl SoundSource {
         SampleOffsets,
         f32,
         f32,
+        LfoParams,
+        LfoParams,
     )> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
@@ -527,6 +634,52 @@ impl SoundSource {
                                         let coarse_tune = get_gen(GeneratorOperator::CoarseTune, 0);
                                         let fine_tune = get_gen(GeneratorOperator::FineTune, 0);
 
+                                        let mod_lfo_delay =
+                                            get_gen(GeneratorOperator::DelayModLFO, -12000);
+                                        let mod_lfo_freq =
+                                            get_gen(GeneratorOperator::FreqModLFO, 0);
+                                        let mod_lfo_to_pitch =
+                                            get_gen(GeneratorOperator::ModLfoToPitch, 0);
+                                        let mod_lfo_to_filter =
+                                            get_gen(GeneratorOperator::ModLfoToFilterFc, 0);
+                                        let mod_lfo_to_volume =
+                                            get_gen(GeneratorOperator::ModLfoToVolume, 0);
+
+                                        let vib_lfo_delay =
+                                            get_gen(GeneratorOperator::DelayVibLFO, -12000);
+                                        let vib_lfo_freq =
+                                            get_gen(GeneratorOperator::FreqVibLFO, 0);
+                                        let vib_lfo_to_pitch =
+                                            get_gen(GeneratorOperator::VibLfoToPitch, 0);
+
+                                        let calc_lfo_delay = |delay_cents: i16| -> f64 {
+                                            if delay_cents <= -12000 {
+                                                0.0
+                                            } else {
+                                                2.0_f64.powf(delay_cents as f64 / 1200.0)
+                                            }
+                                        };
+
+                                        let calc_lfo_freq = |freq_cents: i16| -> f32 {
+                                            8.176 * 2.0_f32.powf(freq_cents as f32 / 1200.0)
+                                        };
+
+                                        let mod_lfo = LfoParams {
+                                            delay: calc_lfo_delay(mod_lfo_delay),
+                                            freq: calc_lfo_freq(mod_lfo_freq),
+                                            to_pitch: mod_lfo_to_pitch as f32,
+                                            to_filter: mod_lfo_to_filter as f32,
+                                            to_volume: mod_lfo_to_volume as f32,
+                                        };
+
+                                        let vib_lfo = LfoParams {
+                                            delay: calc_lfo_delay(vib_lfo_delay),
+                                            freq: calc_lfo_freq(vib_lfo_freq),
+                                            to_pitch: vib_lfo_to_pitch as f32,
+                                            to_filter: 0.0,
+                                            to_volume: 0.0,
+                                        };
+
                                         let adsr = Adsr {
                                             delay: delay_sec,
                                             attack: attack_sec.max(0.001),
@@ -546,6 +699,8 @@ impl SoundSource {
                                             sample_offsets,
                                             coarse_tune as f32,
                                             fine_tune as f32,
+                                            mod_lfo,
+                                            vib_lfo,
                                         ));
                                     }
                                 }
@@ -618,7 +773,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -649,7 +804,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
