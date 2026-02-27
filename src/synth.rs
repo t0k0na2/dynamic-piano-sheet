@@ -4,7 +4,9 @@ use web_sys::{AudioNode, BaseAudioContext};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Adsr {
+    pub delay: f64,
     pub attack: f64,
+    pub hold: f64,
     pub decay: f64,
     pub sustain: f64,
     pub release: f64,
@@ -62,7 +64,9 @@ impl SoundSource {
         soundfont: &SoundFont,
     ) -> Result<SoundSource, JsValue> {
         let default_adsr = Adsr {
+            delay: 0.0,
             attack: 0.01,
+            hold: 0.0,
             decay: 0.2,
             sustain: 0.8,
             release: 0.5,
@@ -151,17 +155,32 @@ impl SoundSource {
             source_node.set_loop_end(rel_loop_end);
         }
 
-        // 2. VCA (Volume Envelope)
+        // 2. VCA (Volume Envelope) ADSRを構築
         let vca = context.create_gain()?;
         let vca_gain = vca.gain();
 
-        vca_gain.set_value_at_time(0.0001, start_time)?;
-        vca_gain.exponential_ramp_to_value_at_time(vel_ratio as f32, start_time + adsr.attack)?;
+        let mut current_time = start_time;
+        vca_gain.set_value_at_time(0.0001, current_time)?;
+
+        if adsr.delay > 0.0 {
+            current_time += adsr.delay;
+            vca_gain.set_value_at_time(0.0001, current_time)?;
+        }
+
+        current_time += adsr.attack;
+        vca_gain.exponential_ramp_to_value_at_time(vel_ratio as f32, current_time)?;
+
+        if adsr.hold > 0.0 {
+            current_time += adsr.hold;
+            vca_gain.set_value_at_time(vel_ratio as f32, current_time)?;
+        }
+
+        current_time += adsr.decay;
         let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
-        vca_gain.exponential_ramp_to_value_at_time(
-            vca_sus as f32,
-            start_time + adsr.attack + adsr.decay,
-        )?;
+        vca_gain.exponential_ramp_to_value_at_time(vca_sus as f32, current_time)?;
+        if end_time > current_time {
+            vca_gain.exponential_ramp_to_value_at_time(vca_sus as f32, end_time)?;
+        }
         vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
 
         // Connection
@@ -369,13 +388,25 @@ impl SoundSource {
                         inst_val.saturating_add(preset_val)
                     };
 
+                    let delay = get_gen(GeneratorOperator::DelayVolEnv, -12000);
                     let attack = get_gen(GeneratorOperator::AttackVolEnv, -12000);
+                    let hold = get_gen(GeneratorOperator::HoldVolEnv, -12000);
                     let decay = get_gen(GeneratorOperator::DecayVolEnv, -12000);
                     let sustain = get_gen(GeneratorOperator::SustainVolEnv, 0);
                     let release = get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
 
                     // 1200 cents = 1 octave = factor of 2
+                    let delay_sec = if delay <= -12000 {
+                        0.0
+                    } else {
+                        2.0_f64.powf(delay as f64 / 1200.0)
+                    };
                     let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);
+                    let hold_sec = if hold <= -12000 {
+                        0.0
+                    } else {
+                        2.0_f64.powf(hold as f64 / 1200.0)
+                    };
                     let decay_sec = 2.0_f64.powf(decay as f64 / 1200.0);
                     let release_sec = 2.0_f64.powf(release as f64 / 1200.0);
 
@@ -383,7 +414,9 @@ impl SoundSource {
                     let sustain_level = 10.0_f64.powf(-(sustain as f64) / 200.0);
 
                     let adsr = Adsr {
+                        delay: delay_sec,
                         attack: attack_sec.max(0.001),
+                        hold: hold_sec,
                         decay: decay_sec.max(0.001),
                         sustain: sustain_level.clamp(0.0, 1.0),
                         release: release_sec.max(0.001),
