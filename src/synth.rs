@@ -245,35 +245,7 @@ impl SoundSource {
         let preset_idx = soundfont
             .preset_headers
             .iter()
-            .position(|p| p.preset == program as u16 && p.bank == bank)
-            // 該当がなければ別のBank/Programにフォールバック
-            .or_else(|| {
-                crate::log!("Preset not found for bank {}, program {}", bank, program);
-                if bank == 128 {
-                    // パーカッションで該当キットがない場合は標準ドラムキット(Bank 128, Preset 0)にフォールバック
-                    soundfont
-                        .preset_headers
-                        .iter()
-                        .position(|p| p.preset == 0 && p.bank == 128)
-                } else {
-                    // 通常楽器の場合は他のBankで同じProgramを探す(ただしBank 128のパーカッション以外)
-                    soundfont
-                        .preset_headers
-                        .iter()
-                        .position(|p| p.preset == program as u16 && p.bank != 128)
-                }
-            })
-            .or_else(|| {
-                crate::log!(
-                    "Fallback again to default preset for bank {}, program {}",
-                    bank,
-                    program
-                );
-                soundfont
-                    .preset_headers
-                    .iter()
-                    .position(|p| p.preset == 0 && p.bank == 0)
-            })?;
+            .position(|p| p.preset == program as u16 && p.bank == bank)?;
 
         let pbag_start = soundfont.preset_headers[preset_idx].preset_bag_ndx as usize;
         let pbag_end = soundfont
