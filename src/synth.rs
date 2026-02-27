@@ -1,4 +1,4 @@
-use crate::soundfont::SoundFont;
+use crate::soundfont::{GeneratorOperator, SoundFont};
 use wasm_bindgen::prelude::*;
 use web_sys::{AudioNode, BaseAudioContext, BiquadFilterType, OscillatorType};
 
@@ -509,28 +509,30 @@ impl SoundSource {
                     if (generator.gen_oper as usize) < 60 {
                         local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
                     }
-                    match generator.gen_oper {
-                        43 => {
-                            // keyRange
-                            let lo = (generator.gen_amount & 0xFF) as u8;
-                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if key < lo || key > hi {
-                                key_in_range = false;
+                    if let Ok(op) = std::convert::TryFrom::try_from(generator.gen_oper) {
+                        match op {
+                            GeneratorOperator::KeyRange => {
+                                // keyRange
+                                let lo = (generator.gen_amount & 0xFF) as u8;
+                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                if key < lo || key > hi {
+                                    key_in_range = false;
+                                }
                             }
-                        }
-                        44 => {
-                            // velRange
-                            let lo = (generator.gen_amount & 0xFF) as u8;
-                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if velocity < lo || velocity > hi {
-                                vel_in_range = false;
+                            GeneratorOperator::VelRange => {
+                                // velRange
+                                let lo = (generator.gen_amount & 0xFF) as u8;
+                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                if velocity < lo || velocity > hi {
+                                    vel_in_range = false;
+                                }
                             }
+                            GeneratorOperator::Instrument => {
+                                // instrument
+                                inst_id = Some(generator.gen_amount as usize);
+                            }
+                            _ => {}
                         }
-                        41 => {
-                            // instrument
-                            inst_id = Some(generator.gen_amount as usize);
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -581,32 +583,34 @@ impl SoundSource {
                     if (generator.gen_oper as usize) < 60 {
                         local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
                     }
-                    match generator.gen_oper {
-                        43 => {
-                            // keyRange
-                            let lo = (generator.gen_amount & 0xFF) as u8;
-                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if key < lo || key > hi {
-                                key_in_range = false;
+                    if let Ok(op) = std::convert::TryFrom::try_from(generator.gen_oper) {
+                        match op {
+                            GeneratorOperator::KeyRange => {
+                                // keyRange
+                                let lo = (generator.gen_amount & 0xFF) as u8;
+                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                if key < lo || key > hi {
+                                    key_in_range = false;
+                                }
                             }
-                        }
-                        44 => {
-                            // velRange
-                            let lo = (generator.gen_amount & 0xFF) as u8;
-                            let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                            if velocity < lo || velocity > hi {
-                                vel_in_range = false;
+                            GeneratorOperator::VelRange => {
+                                // velRange
+                                let lo = (generator.gen_amount & 0xFF) as u8;
+                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                if velocity < lo || velocity > hi {
+                                    vel_in_range = false;
+                                }
                             }
+                            GeneratorOperator::SampleID => {
+                                // sampleID
+                                sample_id = Some(generator.gen_amount as usize);
+                            }
+                            GeneratorOperator::OverridingRootKey => {
+                                // overridingRootKey
+                                overriding_root_key = Some(generator.gen_amount as u8);
+                            }
+                            _ => {}
                         }
-                        53 => {
-                            // sampleID
-                            sample_id = Some(generator.gen_amount as usize);
-                        }
-                        58 => {
-                            // overridingRootKey
-                            overriding_root_key = Some(generator.gen_amount as u8);
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -618,18 +622,21 @@ impl SoundSource {
 
             if key_in_range && vel_in_range {
                 if let Some(id) = sample_id {
-                    let get_gen = |oper: usize, default: i16| -> i16 {
+                    let get_gen = |oper: GeneratorOperator, default: i16| -> i16 {
+                        let op_idx = oper as usize;
                         // Priority: Instrument Local > Instrument Global
-                        let inst_val = local_gens[oper].or(i_global_gens[oper]).unwrap_or(default);
+                        let inst_val = local_gens[op_idx]
+                            .or(i_global_gens[op_idx])
+                            .unwrap_or(default);
                         // Add Preset Local > Preset Global (default offset 0)
-                        let preset_val = preset_gens[oper].or(p_global_gens[oper]).unwrap_or(0);
+                        let preset_val = preset_gens[op_idx].or(p_global_gens[op_idx]).unwrap_or(0);
                         inst_val.saturating_add(preset_val)
                     };
 
-                    let attack = get_gen(34, -12000);
-                    let decay = get_gen(36, -12000);
-                    let sustain = get_gen(37, 0);
-                    let release = get_gen(38, -12000);
+                    let attack = get_gen(GeneratorOperator::AttackVolEnv, -12000);
+                    let decay = get_gen(GeneratorOperator::DecayVolEnv, -12000);
+                    let sustain = get_gen(GeneratorOperator::SustainVolEnv, 0);
+                    let release = get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
 
                     // 1200 cents = 1 octave = factor of 2
                     let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);

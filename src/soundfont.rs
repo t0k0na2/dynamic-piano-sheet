@@ -21,6 +21,210 @@ impl fmt::Display for SoundFontError {
 
 impl std::error::Error for SoundFontError {}
 
+/// SoundFont 2 ジェネレータのオペレータID (0〜60)
+/// 値は16bit整数 (WORD) として定義されています。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u16)]
+pub enum GeneratorOperator {
+    StartAddrsOffset = 0,
+    EndAddrsOffset = 1,
+    StartloopAddrsOffset = 2,
+    EndloopAddrsOffset = 3,
+    StartAddrsCoarseOffset = 4,
+    ModLfoToPitch = 5,
+    VibLfoToPitch = 6,
+    ModEnvToPitch = 7,
+    InitialFilterFc = 8,
+    InitialFilterQ = 9,
+    ModLfoToFilterFc = 10,
+    ModEnvToFilterFc = 11,
+    EndAddrsCoarseOffset = 12,
+    ModLfoToVolume = 13,
+    Unused1 = 14,
+    ChorusEffectsSend = 15,
+    ReverbEffectsSend = 16,
+    Pan = 17,
+    Unused2 = 18,
+    Unused3 = 19,
+    Unused4 = 20,
+    DelayModLFO = 21,
+    FreqModLFO = 22,
+    DelayVibLFO = 23,
+    FreqVibLFO = 24,
+    DelayModEnv = 25,
+    AttackModEnv = 26,
+    HoldModEnv = 27,
+    DecayModEnv = 28,
+    SustainModEnv = 29,
+    ReleaseModEnv = 30,
+    KeynumToModEnvHold = 31,
+    KeynumToModEnvDecay = 32,
+    DelayVolEnv = 33,
+    AttackVolEnv = 34,
+    HoldVolEnv = 35,
+    DecayVolEnv = 36,
+    SustainVolEnv = 37,
+    ReleaseVolEnv = 38,
+    KeynumToVolEnvHold = 39,
+    KeynumToVolEnvDecay = 40,
+    Instrument = 41,
+    Reserved1 = 42,
+    KeyRange = 43,
+    VelRange = 44,
+    StartloopAddrsCoarseOffset = 45,
+    Keynum = 46,
+    Velocity = 47,
+    InitialAttenuation = 48,
+    Reserved2 = 49,
+    EndloopAddrsCoarseOffset = 50,
+    CoarseTune = 51,
+    FineTune = 52,
+    SampleID = 53,
+    SampleModes = 54,
+    Reserved3 = 55,
+    ScaleTuning = 56,
+    ExclusiveClass = 57,
+    OverridingRootKey = 58,
+    Unused5 = 59,
+    EndOper = 60,
+}
+
+impl std::convert::TryFrom<u16> for GeneratorOperator {
+    type Error = &'static str;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(GeneratorOperator::StartAddrsOffset),
+            1 => Ok(GeneratorOperator::EndAddrsOffset),
+            2 => Ok(GeneratorOperator::StartloopAddrsOffset),
+            3 => Ok(GeneratorOperator::EndloopAddrsOffset),
+            4 => Ok(GeneratorOperator::StartAddrsCoarseOffset),
+            5 => Ok(GeneratorOperator::ModLfoToPitch),
+            6 => Ok(GeneratorOperator::VibLfoToPitch),
+            7 => Ok(GeneratorOperator::ModEnvToPitch),
+            8 => Ok(GeneratorOperator::InitialFilterFc),
+            9 => Ok(GeneratorOperator::InitialFilterQ),
+            10 => Ok(GeneratorOperator::ModLfoToFilterFc),
+            11 => Ok(GeneratorOperator::ModEnvToFilterFc),
+            12 => Ok(GeneratorOperator::EndAddrsCoarseOffset),
+            13 => Ok(GeneratorOperator::ModLfoToVolume),
+            14 => Ok(GeneratorOperator::Unused1),
+            15 => Ok(GeneratorOperator::ChorusEffectsSend),
+            16 => Ok(GeneratorOperator::ReverbEffectsSend),
+            17 => Ok(GeneratorOperator::Pan),
+            18 => Ok(GeneratorOperator::Unused2),
+            19 => Ok(GeneratorOperator::Unused3),
+            20 => Ok(GeneratorOperator::Unused4),
+            21 => Ok(GeneratorOperator::DelayModLFO),
+            22 => Ok(GeneratorOperator::FreqModLFO),
+            23 => Ok(GeneratorOperator::DelayVibLFO),
+            24 => Ok(GeneratorOperator::FreqVibLFO),
+            25 => Ok(GeneratorOperator::DelayModEnv),
+            26 => Ok(GeneratorOperator::AttackModEnv),
+            27 => Ok(GeneratorOperator::HoldModEnv),
+            28 => Ok(GeneratorOperator::DecayModEnv),
+            29 => Ok(GeneratorOperator::SustainModEnv),
+            30 => Ok(GeneratorOperator::ReleaseModEnv),
+            31 => Ok(GeneratorOperator::KeynumToModEnvHold),
+            32 => Ok(GeneratorOperator::KeynumToModEnvDecay),
+            33 => Ok(GeneratorOperator::DelayVolEnv),
+            34 => Ok(GeneratorOperator::AttackVolEnv),
+            35 => Ok(GeneratorOperator::HoldVolEnv),
+            36 => Ok(GeneratorOperator::DecayVolEnv),
+            37 => Ok(GeneratorOperator::SustainVolEnv),
+            38 => Ok(GeneratorOperator::ReleaseVolEnv),
+            39 => Ok(GeneratorOperator::KeynumToVolEnvHold),
+            40 => Ok(GeneratorOperator::KeynumToVolEnvDecay),
+            41 => Ok(GeneratorOperator::Instrument),
+            42 => Ok(GeneratorOperator::Reserved1),
+            43 => Ok(GeneratorOperator::KeyRange),
+            44 => Ok(GeneratorOperator::VelRange),
+            45 => Ok(GeneratorOperator::StartloopAddrsCoarseOffset),
+            46 => Ok(GeneratorOperator::Keynum),
+            47 => Ok(GeneratorOperator::Velocity),
+            48 => Ok(GeneratorOperator::InitialAttenuation),
+            49 => Ok(GeneratorOperator::Reserved2),
+            50 => Ok(GeneratorOperator::EndloopAddrsCoarseOffset),
+            51 => Ok(GeneratorOperator::CoarseTune),
+            52 => Ok(GeneratorOperator::FineTune),
+            53 => Ok(GeneratorOperator::SampleID),
+            54 => Ok(GeneratorOperator::SampleModes),
+            55 => Ok(GeneratorOperator::Reserved3),
+            56 => Ok(GeneratorOperator::ScaleTuning),
+            57 => Ok(GeneratorOperator::ExclusiveClass),
+            58 => Ok(GeneratorOperator::OverridingRootKey),
+            59 => Ok(GeneratorOperator::Unused5),
+            60 => Ok(GeneratorOperator::EndOper),
+            _ => Err("Invalid Generator Operator ID"),
+        }
+    }
+}
+
+/// ジェネレータのオペレータIDをインデックスとして、仕様書における元の名称を取得するための配列
+pub const GENERATOR_NAMES: [&str; 61] = [
+    "startAddrsOffset",           // 0
+    "endAddrsOffset",             // 1
+    "startloopAddrsOffset",       // 2
+    "endloopAddrsOffset",         // 3
+    "startAddrsCoarseOffset",     // 4
+    "modLfoToPitch",              // 5
+    "vibLfoToPitch",              // 6
+    "modEnvToPitch",              // 7
+    "initialFilterFc",            // 8
+    "initialFilterQ",             // 9
+    "modLfoToFilterFc",           // 10
+    "modEnvToFilterFc",           // 11
+    "endAddrsCoarseOffset",       // 12
+    "modLfoToVolume",             // 13
+    "unused1",                    // 14
+    "chorusEffectsSend",          // 15
+    "reverbEffectsSend",          // 16
+    "pan",                        // 17
+    "unused2",                    // 18
+    "unused3",                    // 19
+    "unused4",                    // 20
+    "delayModLFO",                // 21
+    "freqModLFO",                 // 22
+    "delayVibLFO",                // 23
+    "freqVibLFO",                 // 24
+    "delayModEnv",                // 25
+    "attackModEnv",               // 26
+    "holdModEnv",                 // 27
+    "decayModEnv",                // 28
+    "sustainModEnv",              // 29
+    "releaseModEnv",              // 30
+    "keynumToModEnvHold",         // 31
+    "keynumToModEnvDecay",        // 32
+    "delayVolEnv",                // 33
+    "attackVolEnv",               // 34
+    "holdVolEnv",                 // 35
+    "decayVolEnv",                // 36
+    "sustainVolEnv",              // 37
+    "releaseVolEnv",              // 38
+    "keynumToVolEnvHold",         // 39
+    "keynumToVolEnvDecay",        // 40
+    "instrument",                 // 41
+    "reserved1",                  // 42
+    "keyRange",                   // 43
+    "velRange",                   // 44
+    "startloopAddrsCoarseOffset", // 45
+    "keynum",                     // 46
+    "velocity",                   // 47
+    "initialAttenuation",         // 48
+    "reserved2",                  // 49
+    "endloopAddrsCoarseOffset",   // 50
+    "coarseTune",                 // 51
+    "fineTune",                   // 52
+    "sampleID",                   // 53
+    "sampleModes",                // 54
+    "reserved3",                  // 55
+    "scaleTuning",                // 56
+    "exclusiveClass",             // 57
+    "overridingRootKey",          // 58
+    "unused5",                    // 59
+    "endOper",                    // 60
+];
+
 // ---------------------------------------------------------
 // 各レコードの構造体
 // sfspec24.pdfに基づいたサイズとフィールド定義
@@ -207,18 +411,20 @@ impl SoundFont {
 
         while offset < end_offset && offset + 8 <= data.len() {
             let (list_id, list_size) = read_chunk_header(data, &mut offset)?;
-            
+
             if &list_id != b"LIST" {
                 offset += list_size as usize;
                 // padding
-                if list_size % 2 != 0 { offset += 1; }
+                if list_size % 2 != 0 {
+                    offset += 1;
+                }
                 continue;
             }
 
             let mut list_type = [0; 4];
             list_type.copy_from_slice(&data[offset..offset + 4]);
             offset += 4;
-            
+
             let list_end = offset - 4 + list_size as usize;
 
             match &list_type {
@@ -238,7 +444,9 @@ impl SoundFont {
                         } else {
                             offset += chunk_size as usize;
                         }
-                        if chunk_size % 2 != 0 { offset += 1; }
+                        if chunk_size % 2 != 0 {
+                            offset += 1;
+                        }
                     }
                 }
                 b"pdta" => {
@@ -350,19 +558,23 @@ impl SoundFont {
                                 // 未知のチャンクはスキップ
                             }
                         }
-                        
+
                         offset = chunk_end; // 念のためポインタ位置を保証
-                        if chunk_size % 2 != 0 { offset += 1; }
+                        if chunk_size % 2 != 0 {
+                            offset += 1;
+                        }
                     }
                 }
                 _ => {
                     // それ以外のLISTはスキップ
                 }
             }
-            
+
             // padding
             offset = list_end;
-            if list_size % 2 != 0 { offset += 1; }
+            if list_size % 2 != 0 {
+                offset += 1;
+            }
         }
 
         Ok(sf)
@@ -393,7 +605,7 @@ mod tests {
         data.extend_from_slice(b"RIFF");
         data.extend_from_slice(&4u32.to_le_bytes());
         data.extend_from_slice(b"sfbk");
-        
+
         let sf = SoundFont::parse(&data).unwrap();
         assert_eq!(sf.preset_headers.len(), 0);
         assert_eq!(sf.sample_data.len(), 0);
@@ -406,23 +618,54 @@ mod tests {
         if let Ok(data) = data {
             let sf = SoundFont::parse(&data);
             assert!(sf.is_ok(), "Failed to parse realistic soundfont file");
-            
+
             let sf = sf.unwrap();
             // 基本的なパースが完了し、レコードがいくつか読み込まれていることを確認
             assert!(sf.preset_headers.len() > 0);
             assert!(sf.sample_headers.len() > 0);
             assert!(sf.sample_data.len() > 0);
 
+            /*
             sf.preset_headers.iter().for_each(|preset| {
-                println!("Preset p:{} b:{} name:{}", preset.preset, preset.bank, preset.name);
+                println!(
+                    "Preset p:{} b:{} name:{}",
+                    preset.preset, preset.bank, preset.name
+                );
             });
 
             sf.sample_headers.iter().for_each(|sample| {
-                println!("Sample name:{} start:{} end:{} smpl_rate:{}", sample.name, sample.start, sample.end, sample.sample_rate);
+                println!(
+                    "Sample name:{} start:{} end:{} smpl_rate:{}",
+                    sample.name, sample.start, sample.end, sample.sample_rate
+                );
             });
-            
-            println!("Parsed SF2: {} presets, {} samples, {} waveform words", 
-                sf.preset_headers.len(), sf.sample_headers.len(), sf.sample_data.len());
+            */
+
+            let mut preset_gen_counts = std::collections::BTreeMap::new();
+            for generator in &sf.preset_generators {
+                *preset_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
+            }
+            for (gen_oper, _count) in &preset_gen_counts {
+                println!("Preset gen_oper {}", GENERATOR_NAMES[*gen_oper as usize]);
+            }
+
+            let mut inst_gen_counts = std::collections::BTreeMap::new();
+            for generator in &sf.instrument_generators {
+                *inst_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
+            }
+            for (gen_oper, _count) in &inst_gen_counts {
+                println!(
+                    "Instrument gen_oper {}",
+                    GENERATOR_NAMES[*gen_oper as usize]
+                );
+            }
+
+            println!(
+                "Parsed SF2: {} presets, {} samples, {} waveform words",
+                sf.preset_headers.len(),
+                sf.sample_headers.len(),
+                sf.sample_data.len()
+            );
         } else {
             // ファイルが存在しない環境でもCIが通るようにスキップ
             println!("test.sf2 not found. Skipping real file test.");
