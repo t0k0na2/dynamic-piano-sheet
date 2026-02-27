@@ -20,6 +20,13 @@ pub struct LfoParams {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct ModEnvParams {
+    pub adsr: Adsr,
+    pub to_pitch: f32,
+    pub to_filter: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Adsr {
     pub delay: f64,
     pub attack: f64,
@@ -90,6 +97,7 @@ impl SoundSource {
             sample_idx,
             overriding_root_key,
             adsr,
+            mod_env,
             filter_fc,
             filter_q,
             sample_modes,
@@ -297,6 +305,42 @@ impl SoundSource {
         let q_db = filter_q / 10.0;
         filter.q().set_value(q_db);
 
+        // -- Apply ModEnv to Pitch & FilterFc --
+        let apply_env = |param: &web_sys::AudioParam, amount: f32| -> Result<(), JsValue> {
+            if amount == 0.0 {
+                return Ok(());
+            }
+            let mut current_time = start_time;
+            param.set_value_at_time(0.0, current_time)?;
+
+            if mod_env.adsr.delay > 0.0 {
+                current_time += mod_env.adsr.delay;
+                param.set_value_at_time(0.0, current_time)?;
+            }
+
+            current_time += mod_env.adsr.attack;
+            param.linear_ramp_to_value_at_time(amount, current_time)?;
+
+            if mod_env.adsr.hold > 0.0 {
+                current_time += mod_env.adsr.hold;
+                param.set_value_at_time(amount, current_time)?;
+            }
+
+            current_time += mod_env.adsr.decay;
+            let sus_val = amount * mod_env.adsr.sustain as f32;
+            param.linear_ramp_to_value_at_time(sus_val, current_time)?;
+
+            if end_time > current_time {
+                param.linear_ramp_to_value_at_time(sus_val, end_time)?;
+            }
+
+            param.linear_ramp_to_value_at_time(0.0, end_time + mod_env.adsr.release)?;
+            Ok(())
+        };
+
+        apply_env(&source_detune, mod_env.to_pitch)?;
+        apply_env(&filter.detune(), mod_env.to_filter)?;
+
         if let Some(osc) = &mod_lfo_osc {
             if mod_lfo.to_filter != 0.0 {
                 let f_gain = context.create_gain()?;
@@ -385,6 +429,7 @@ impl SoundSource {
         usize,
         Option<u8>,
         Adsr,
+        ModEnvParams,
         f32,
         f32,
         u16,
@@ -634,6 +679,63 @@ impl SoundSource {
                                         let coarse_tune = get_gen(GeneratorOperator::CoarseTune, 0);
                                         let fine_tune = get_gen(GeneratorOperator::FineTune, 0);
 
+                                        let del_mod =
+                                            get_gen(GeneratorOperator::DelayModEnv, -12000);
+                                        let att_mod =
+                                            get_gen(GeneratorOperator::AttackModEnv, -12000);
+                                        let hld_mod =
+                                            get_gen(GeneratorOperator::HoldModEnv, -12000);
+                                        let dec_mod =
+                                            get_gen(GeneratorOperator::DecayModEnv, -12000);
+                                        let sus_mod = get_gen(GeneratorOperator::SustainModEnv, 0);
+                                        let rel_mod =
+                                            get_gen(GeneratorOperator::ReleaseModEnv, -12000);
+
+                                        let keynum_to_mod_hold =
+                                            get_gen(GeneratorOperator::KeynumToModEnvHold, 0);
+                                        let keynum_to_mod_decay =
+                                            get_gen(GeneratorOperator::KeynumToModEnvDecay, 0);
+                                        let mod_env_to_pitch =
+                                            get_gen(GeneratorOperator::ModEnvToPitch, 0);
+                                        let mod_env_to_filter_fc =
+                                            get_gen(GeneratorOperator::ModEnvToFilterFc, 0);
+
+                                        let key_diff = 60 - (key as i16);
+                                        let eff_hld_mod = hld_mod.saturating_add(
+                                            keynum_to_mod_hold.saturating_mul(key_diff),
+                                        );
+                                        let eff_dec_mod = dec_mod.saturating_add(
+                                            keynum_to_mod_decay.saturating_mul(key_diff),
+                                        );
+
+                                        let mod_env = ModEnvParams {
+                                            adsr: Adsr {
+                                                delay: if del_mod <= -12000 {
+                                                    0.0
+                                                } else {
+                                                    2.0_f64.powf(del_mod as f64 / 1200.0)
+                                                },
+                                                attack: 2.0_f64
+                                                    .powf(att_mod as f64 / 1200.0)
+                                                    .max(0.001),
+                                                hold: if eff_hld_mod <= -12000 {
+                                                    0.0
+                                                } else {
+                                                    2.0_f64.powf(eff_hld_mod as f64 / 1200.0)
+                                                },
+                                                decay: 2.0_f64
+                                                    .powf(eff_dec_mod as f64 / 1200.0)
+                                                    .max(0.001),
+                                                sustain: (1.0 - (sus_mod as f64 / 1000.0))
+                                                    .clamp(0.0, 1.0),
+                                                release: 2.0_f64
+                                                    .powf(rel_mod as f64 / 1200.0)
+                                                    .max(0.001),
+                                            },
+                                            to_pitch: mod_env_to_pitch as f32,
+                                            to_filter: mod_env_to_filter_fc as f32,
+                                        };
+
                                         let mod_lfo_delay =
                                             get_gen(GeneratorOperator::DelayModLFO, -12000);
                                         let mod_lfo_freq =
@@ -693,6 +795,7 @@ impl SoundSource {
                                             sid,
                                             overriding_root_key,
                                             adsr,
+                                            mod_env,
                                             initial_filter_fc as f32,
                                             initial_filter_q as f32,
                                             sample_modes as u16,
@@ -773,7 +876,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -804,7 +907,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
