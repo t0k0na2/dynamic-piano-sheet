@@ -107,6 +107,7 @@ impl SoundSource {
             mod_lfo,
             vib_lfo,
             scale_tuning,
+            vol_factor,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -121,7 +122,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity);
+        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -443,6 +444,7 @@ impl SoundSource {
         LfoParams,
         LfoParams,
         f32,
+        f32,
     )> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
@@ -623,6 +625,19 @@ impl SoundSource {
                                         let release =
                                             get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
 
+                                        let keynum_to_vol_hold =
+                                            get_gen(GeneratorOperator::KeynumToVolEnvHold, 0);
+                                        let keynum_to_vol_decay =
+                                            get_gen(GeneratorOperator::KeynumToVolEnvDecay, 0);
+
+                                        let key_diff = 60 - (key as i16);
+                                        let eff_vol_hold = hold.saturating_add(
+                                            keynum_to_vol_hold.saturating_mul(key_diff),
+                                        );
+                                        let eff_vol_decay = decay.saturating_add(
+                                            keynum_to_vol_decay.saturating_mul(key_diff),
+                                        );
+
                                         let initial_filter_fc =
                                             get_gen(GeneratorOperator::InitialFilterFc, 13500);
                                         let initial_filter_q =
@@ -666,12 +681,12 @@ impl SoundSource {
                                             2.0_f64.powf(delay as f64 / 1200.0)
                                         };
                                         let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);
-                                        let hold_sec = if hold <= -12000 {
+                                        let hold_sec = if eff_vol_hold <= -12000 {
                                             0.0
                                         } else {
-                                            2.0_f64.powf(hold as f64 / 1200.0)
+                                            2.0_f64.powf(eff_vol_hold as f64 / 1200.0)
                                         };
-                                        let decay_sec = 2.0_f64.powf(decay as f64 / 1200.0);
+                                        let decay_sec = 2.0_f64.powf(eff_vol_decay as f64 / 1200.0);
                                         let release_sec = 2.0_f64.powf(release as f64 / 1200.0);
                                         let sustain_level =
                                             10.0_f64.powf(-(sustain as f64) / 200.0);
@@ -700,7 +715,6 @@ impl SoundSource {
                                         let mod_env_to_filter_fc =
                                             get_gen(GeneratorOperator::ModEnvToFilterFc, 0);
 
-                                        let key_diff = 60 - (key as i16);
                                         let eff_hld_mod = hld_mod.saturating_add(
                                             keynum_to_mod_hold.saturating_mul(key_diff),
                                         );
@@ -806,6 +820,11 @@ impl SoundSource {
                                         let scale_tuning =
                                             get_gen(GeneratorOperator::ScaleTuning, 100) as f32;
 
+                                        let initial_attenuation =
+                                            get_gen(GeneratorOperator::InitialAttenuation, 0);
+                                        let vol_factor =
+                                            10.0_f32.powf(-(initial_attenuation as f32) / 200.0);
+
                                         return Some((
                                             sid,
                                             calculated_overriding_root_key,
@@ -820,6 +839,7 @@ impl SoundSource {
                                             mod_lfo,
                                             vib_lfo,
                                             scale_tuning,
+                                            vol_factor,
                                         ));
                                     }
                                 }
@@ -892,7 +912,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -923,7 +943,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
