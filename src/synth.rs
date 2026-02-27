@@ -3,6 +3,14 @@ use wasm_bindgen::prelude::*;
 use web_sys::{AudioNode, BaseAudioContext};
 
 #[derive(Clone, Copy, Debug)]
+pub struct SampleOffsets {
+    pub start: i32,
+    pub end: i32,
+    pub start_loop: i32,
+    pub end_loop: i32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Adsr {
     pub delay: f64,
     pub attack: f64,
@@ -69,19 +77,26 @@ impl SoundSource {
         // MIDI channel 10 はパーカッション用のため、Bankを128に強制する
         bank = if channel == 10 { 128 } else { bank };
         // 使用するサンプルのインデックスを探す
-        let (sample_idx, overriding_root_key, adsr, filter_fc, filter_q, sample_modes) =
-            match Self::find_sample_index(soundfont, bank, program, key, velocity) {
-                Some(params) => params,
-                None => {
-                    // サンプルが見つからない場合は無音のSoundSourceを返す
-                    crate::log!("Sample not found for key: {}", key);
-                    return Ok(SoundSource {
-                        nodes: vec![],
-                        now_time: start_time,
-                        end_time: start_time,
-                    });
-                }
-            };
+        let (
+            sample_idx,
+            overriding_root_key,
+            adsr,
+            filter_fc,
+            filter_q,
+            sample_modes,
+            sample_offsets,
+        ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
+            Some(params) => params,
+            None => {
+                // サンプルが見つからない場合は無音のSoundSourceを返す
+                crate::log!("Sample not found for key: {}", key);
+                return Ok(SoundSource {
+                    nodes: vec![],
+                    now_time: start_time,
+                    end_time: start_time,
+                });
+            }
+        };
 
         let _freq = Self::midi_key_to_freq(key);
         let vel_ratio = Self::velocity_to_ratio(velocity);
@@ -119,8 +134,8 @@ impl SoundSource {
 
         // 動的にAudioBufferを生成する
         let audio_buffer = if let Some(h) = shdr {
-            let start_idx = h.start as usize;
-            let end_idx = h.end as usize;
+            let start_idx = (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
+            let end_idx = (h.end as i64 + sample_offsets.end as i64).max(0) as usize;
 
             // 安全のためデータサイズの範囲内にする
             let safe_start = start_idx.min(soundfont.sample_data.len());
@@ -157,12 +172,20 @@ impl SoundSource {
             source_node.set_loop(loop_enabled);
 
             if loop_enabled {
+                let effective_start =
+                    (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
+                let loop_start_idx =
+                    (h.start_loop as i64 + sample_offsets.start_loop as i64).max(0) as usize;
+                let loop_end_idx =
+                    (h.end_loop as i64 + sample_offsets.end_loop as i64).max(0) as usize;
+
                 // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
                 let rel_loop_start =
-                    h.start_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
-                let rel_loop_end = h.end_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
-                source_node.set_loop_start(rel_loop_start);
-                source_node.set_loop_end(rel_loop_end);
+                    loop_start_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
+                let rel_loop_end =
+                    loop_end_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
+                source_node.set_loop_start(rel_loop_start.max(0.0));
+                source_node.set_loop_end(rel_loop_end.max(0.0));
             }
         }
 
@@ -240,7 +263,7 @@ impl SoundSource {
         program: u8,
         key: u8,
         velocity: u8,
-    ) -> Option<(usize, Option<u8>, Adsr, f32, f32, u16)> {
+    ) -> Option<(usize, Option<u8>, Adsr, f32, f32, u16, SampleOffsets)> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
             .preset_headers
@@ -432,6 +455,36 @@ impl SoundSource {
                                         let sample_modes =
                                             get_gen(GeneratorOperator::SampleModes, 0);
 
+                                        let start_addrs_offset =
+                                            get_gen(GeneratorOperator::StartAddrsOffset, 0);
+                                        let end_addrs_offset =
+                                            get_gen(GeneratorOperator::EndAddrsOffset, 0);
+                                        let startloop_addrs_offset =
+                                            get_gen(GeneratorOperator::StartloopAddrsOffset, 0);
+                                        let endloop_addrs_offset =
+                                            get_gen(GeneratorOperator::EndloopAddrsOffset, 0);
+                                        let start_addrs_coarse_offset =
+                                            get_gen(GeneratorOperator::StartAddrsCoarseOffset, 0);
+                                        let end_addrs_coarse_offset =
+                                            get_gen(GeneratorOperator::EndAddrsCoarseOffset, 0);
+                                        let startloop_addrs_coarse_offset = get_gen(
+                                            GeneratorOperator::StartloopAddrsCoarseOffset,
+                                            0,
+                                        );
+                                        let endloop_addrs_coarse_offset =
+                                            get_gen(GeneratorOperator::EndloopAddrsCoarseOffset, 0);
+
+                                        let sample_offsets = SampleOffsets {
+                                            start: start_addrs_offset as i32
+                                                + (start_addrs_coarse_offset as i32 * 32768),
+                                            end: end_addrs_offset as i32
+                                                + (end_addrs_coarse_offset as i32 * 32768),
+                                            start_loop: startloop_addrs_offset as i32
+                                                + (startloop_addrs_coarse_offset as i32 * 32768),
+                                            end_loop: endloop_addrs_offset as i32
+                                                + (endloop_addrs_coarse_offset as i32 * 32768),
+                                        };
+
                                         let delay_sec = if delay <= -12000 {
                                             0.0
                                         } else {
@@ -464,6 +517,7 @@ impl SoundSource {
                                             initial_filter_fc as f32,
                                             initial_filter_q as f32,
                                             sample_modes as u16,
+                                            sample_offsets,
                                         ));
                                     }
                                 }
@@ -536,7 +590,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -567,7 +621,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
