@@ -73,10 +73,10 @@ impl SoundSource {
         };
 
         // 使用するサンプルのインデックスを探す
-        let (sample_idx, overriding_root_key, adsr) = Self::find_sample_index(
+        let (sample_idx, overriding_root_key, adsr, filter_fc, filter_q) = Self::find_sample_index(
             soundfont, bank, program, key, velocity,
         )
-        .unwrap_or((0, None, default_adsr));
+        .unwrap_or((0, None, default_adsr, 13500.0, 0.0));
 
         let _freq = Self::midi_key_to_freq(key);
         let vel_ratio = Self::velocity_to_ratio(velocity);
@@ -183,8 +183,23 @@ impl SoundSource {
         }
         vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
 
+        // Filter (BiquadFilterNode - Lowpass) を構築して initialFilterFc, initialFilterQ を設定
+        let filter = context.create_biquad_filter()?;
+        filter.set_type(web_sys::BiquadFilterType::Lowpass);
+
+        // initialFilterFc: セント単位 (0 cents = 8.176 Hz) => Hz = 440 * 2^((cents - 6900) / 1200)
+        let freq_hz = 440.0 * 2.0_f32.powf((filter_fc - 6900.0) / 1200.0);
+        let max_freq = context.sample_rate() / 2.0;
+        let clamped_freq = freq_hz.min(max_freq).max(0.0);
+        filter.frequency().set_value(clamped_freq);
+
+        // initialFilterQ: セントベル(cB)単位。Web Audio APIのQ値(Lowpass用)はデシベル(dB)なので 10.0 で割る
+        let q_db = filter_q / 10.0;
+        filter.q().set_value(q_db);
+
         // Connection
-        source_node.connect_with_audio_node(&vca)?;
+        source_node.connect_with_audio_node(&filter)?;
+        filter.connect_with_audio_node(&vca)?;
         vca.connect_with_audio_node(destination_target)?;
 
         // Play
@@ -201,7 +216,7 @@ impl SoundSource {
         let cleanup_time = end_time + adsr.release + 0.2;
 
         Ok(SoundSource {
-            nodes: vec![source_node.into(), vca.into()],
+            nodes: vec![source_node.into(), filter.into(), vca.into()],
             now_time: start_time,
             end_time: cleanup_time,
         })
@@ -214,7 +229,7 @@ impl SoundSource {
         program: u8,
         key: u8,
         velocity: u8,
-    ) -> Option<(usize, Option<u8>, Adsr)> {
+    ) -> Option<(usize, Option<u8>, Adsr, f32, f32)> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
             .preset_headers
@@ -395,6 +410,9 @@ impl SoundSource {
                     let sustain = get_gen(GeneratorOperator::SustainVolEnv, 0);
                     let release = get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
 
+                    let initial_filter_fc = get_gen(GeneratorOperator::InitialFilterFc, 13500);
+                    let initial_filter_q = get_gen(GeneratorOperator::InitialFilterQ, 0);
+
                     // 1200 cents = 1 octave = factor of 2
                     let delay_sec = if delay <= -12000 {
                         0.0
@@ -422,7 +440,13 @@ impl SoundSource {
                         release: release_sec.max(0.001),
                     };
 
-                    return Some((id, overriding_root_key, adsr));
+                    return Some((
+                        id,
+                        overriding_root_key,
+                        adsr,
+                        initial_filter_fc as f32,
+                        initial_filter_q as f32,
+                    ));
                 }
             }
         }
