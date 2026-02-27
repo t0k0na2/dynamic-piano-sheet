@@ -539,6 +539,7 @@ impl MidiPlayer {
             let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
             context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
             context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+
             for note in diplay_notes.iter() {
                 if note.track() != track_no {
                     continue;

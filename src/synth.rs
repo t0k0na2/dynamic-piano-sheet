@@ -61,25 +61,27 @@ impl SoundSource {
         velocity: u8,
         channel: u8,
         program: u8,
-        bank: u16,
+        mut bank: u16,
         start_time: f64,
         end_time: f64,
         soundfont: &SoundFont,
     ) -> Result<SoundSource, JsValue> {
-        let default_adsr = Adsr {
-            delay: 0.0,
-            attack: 0.01,
-            hold: 0.0,
-            decay: 0.2,
-            sustain: 0.8,
-            release: 0.5,
-        };
-
+        // MIDI channel 10 はパーカッション用のため、Bankを128に強制する
+        bank = if channel == 10 { 128 } else { bank };
         // 使用するサンプルのインデックスを探す
-        let (sample_idx, overriding_root_key, adsr, filter_fc, filter_q) = Self::find_sample_index(
-            soundfont, bank, program, key, velocity,
-        )
-        .unwrap_or((0, None, default_adsr, 13500.0, 0.0));
+        let (sample_idx, overriding_root_key, adsr, filter_fc, filter_q, sample_modes) =
+            match Self::find_sample_index(soundfont, bank, program, key, velocity) {
+                Some(params) => params,
+                None => {
+                    // サンプルが見つからない場合は無音のSoundSourceを返す
+                    crate::log!("Sample not found for key: {}", key);
+                    return Ok(SoundSource {
+                        nodes: vec![],
+                        now_time: start_time,
+                        end_time: start_time,
+                    });
+                }
+            };
 
         let _freq = Self::midi_key_to_freq(key);
         let vel_ratio = Self::velocity_to_ratio(velocity);
@@ -150,12 +152,18 @@ impl SoundSource {
 
         // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
         if let Some(h) = shdr {
-            source_node.set_loop(true);
-            // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
-            let rel_loop_start = h.start_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
-            let rel_loop_end = h.end_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
-            source_node.set_loop_start(rel_loop_start);
-            source_node.set_loop_end(rel_loop_end);
+            // sampleModes: 0 (no loop), 1 (loop continuously), 2 (no loop), 3 (loop for duration of key depression)
+            let loop_enabled = sample_modes == 1 || sample_modes == 3;
+            source_node.set_loop(loop_enabled);
+
+            if loop_enabled {
+                // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
+                let rel_loop_start =
+                    h.start_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
+                let rel_loop_end = h.end_loop.saturating_sub(h.start) as f64 / sample_rate as f64;
+                source_node.set_loop_start(rel_loop_start);
+                source_node.set_loop_end(rel_loop_end);
+            }
         }
 
         // 2. VCA (Volume Envelope) ADSRを構築
@@ -232,20 +240,35 @@ impl SoundSource {
         program: u8,
         key: u8,
         velocity: u8,
-    ) -> Option<(usize, Option<u8>, Adsr, f32, f32)> {
+    ) -> Option<(usize, Option<u8>, Adsr, f32, f32, u16)> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
             .preset_headers
             .iter()
             .position(|p| p.preset == program as u16 && p.bank == bank)
-            // 該当がなければ bank 変えずに program のみ、あるいは bank 0 にフォールバックなどを検討（ここでは柔軟にヒットさせる）
+            // 該当がなければ別のBank/Programにフォールバック
             .or_else(|| {
-                soundfont
-                    .preset_headers
-                    .iter()
-                    .position(|p| p.preset == program as u16)
+                crate::log!("Preset not found for bank {}, program {}", bank, program);
+                if bank == 128 {
+                    // パーカッションで該当キットがない場合は標準ドラムキット(Bank 128, Preset 0)にフォールバック
+                    soundfont
+                        .preset_headers
+                        .iter()
+                        .position(|p| p.preset == 0 && p.bank == 128)
+                } else {
+                    // 通常楽器の場合は他のBankで同じProgramを探す(ただしBank 128のパーカッション以外)
+                    soundfont
+                        .preset_headers
+                        .iter()
+                        .position(|p| p.preset == program as u16 && p.bank != 128)
+                }
             })
             .or_else(|| {
+                crate::log!(
+                    "Fallback again to default preset for bank {}, program {}",
+                    bank,
+                    program
+                );
                 soundfont
                     .preset_headers
                     .iter()
@@ -259,11 +282,9 @@ impl SoundSource {
             .map(|p| p.preset_bag_ndx as usize)
             .unwrap_or(soundfont.preset_bags.len());
 
-        let mut matched_instrument_id = None;
-        let mut preset_gens = [None; 60];
+        // 2. プリセットから一致するゾーンを検索し、その中でインストゥルメントを検索
         let mut p_global_gens = [None; 60];
 
-        // 2. プリセットから一致するゾーン（インストゥルメント）を検索
         for b in pbag_start..pbag_end {
             let gen_start = soundfont.preset_bags[b].gen_ndx as usize;
             let gen_end = soundfont
@@ -272,36 +293,33 @@ impl SoundSource {
                 .map(|bg| bg.gen_ndx as usize)
                 .unwrap_or(soundfont.preset_generators.len());
 
-            let mut key_in_range = true;
-            let mut vel_in_range = true;
+            let mut key_in_range_p = true;
+            let mut vel_in_range_p = true;
             let mut inst_id = None;
-            let mut local_gens = [None; 60];
+            let mut preset_local_gens = [None; 60];
 
             for g in gen_start..gen_end {
                 if let Some(generator) = soundfont.preset_generators.get(g) {
                     if (generator.gen_oper as usize) < 60 {
-                        local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
+                        preset_local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
                     }
                     if let Ok(op) = std::convert::TryFrom::try_from(generator.gen_oper) {
                         match op {
                             GeneratorOperator::KeyRange => {
-                                // keyRange
                                 let lo = (generator.gen_amount & 0xFF) as u8;
                                 let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
                                 if key < lo || key > hi {
-                                    key_in_range = false;
+                                    key_in_range_p = false;
                                 }
                             }
                             GeneratorOperator::VelRange => {
-                                // velRange
                                 let lo = (generator.gen_amount & 0xFF) as u8;
                                 let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
                                 if velocity < lo || velocity > hi {
-                                    vel_in_range = false;
+                                    vel_in_range_p = false;
                                 }
                             }
                             GeneratorOperator::Instrument => {
-                                // instrument
                                 inst_id = Some(generator.gen_amount as usize);
                             }
                             _ => {}
@@ -311,145 +329,153 @@ impl SoundSource {
             }
 
             if inst_id.is_none() && b == pbag_start {
-                p_global_gens = local_gens;
+                p_global_gens = preset_local_gens;
                 continue;
             }
 
-            // 条件に一致かつインストゥルメントIDが見つかった場合
-            if key_in_range && vel_in_range {
+            if key_in_range_p && vel_in_range_p {
                 if let Some(id) = inst_id {
-                    matched_instrument_id = Some(id);
-                    preset_gens = local_gens;
-                    break;
-                }
-            }
-        }
+                    let preset_gens = preset_local_gens;
 
-        let inst_id = matched_instrument_id?;
+                    // 3. インストゥルメントから一致するサンプルを検索
+                    if let Some(instrument) = soundfont.instruments.get(id) {
+                        let ibag_start = instrument.inst_bag_ndx as usize;
+                        let ibag_end = soundfont
+                            .instruments
+                            .get(id + 1)
+                            .map(|i| i.inst_bag_ndx as usize)
+                            .unwrap_or(soundfont.instrument_bags.len());
 
-        // 3. インストゥルメントから一致するサンプルを検索
-        let ibag_start = soundfont.instruments.get(inst_id)?.inst_bag_ndx as usize;
-        let ibag_end = soundfont
-            .instruments
-            .get(inst_id + 1)
-            .map(|i| i.inst_bag_ndx as usize)
-            .unwrap_or(soundfont.instrument_bags.len());
+                        let mut i_global_gens = [None; 60];
 
-        let mut i_global_gens = [None; 60];
+                        for ib in ibag_start..ibag_end {
+                            if let Some(ibag) = soundfont.instrument_bags.get(ib) {
+                                let igen_start = ibag.inst_gen_ndx as usize;
+                                let igen_end = soundfont
+                                    .instrument_bags
+                                    .get(ib + 1)
+                                    .map(|bg| bg.inst_gen_ndx as usize)
+                                    .unwrap_or(soundfont.instrument_generators.len());
 
-        for b in ibag_start..ibag_end {
-            let gen_start = soundfont.instrument_bags.get(b)?.inst_gen_ndx as usize;
-            let gen_end = soundfont
-                .instrument_bags
-                .get(b + 1)
-                .map(|bg| bg.inst_gen_ndx as usize)
-                .unwrap_or(soundfont.instrument_generators.len());
+                                let mut key_in_range_i = true;
+                                let mut vel_in_range_i = true;
+                                let mut sample_id = None;
+                                let mut overriding_root_key = None;
+                                let mut inst_local_gens = [None; 60];
 
-            let mut key_in_range = true;
-            let mut vel_in_range = true;
-            let mut sample_id = None;
-            let mut overriding_root_key = None;
-            let mut local_gens = [None; 60];
+                                for ig in igen_start..igen_end {
+                                    if let Some(generator) = soundfont.instrument_generators.get(ig)
+                                    {
+                                        if (generator.gen_oper as usize) < 60 {
+                                            inst_local_gens[generator.gen_oper as usize] =
+                                                Some(generator.gen_amount);
+                                        }
+                                        if let Ok(op) =
+                                            std::convert::TryFrom::try_from(generator.gen_oper)
+                                        {
+                                            match op {
+                                                GeneratorOperator::KeyRange => {
+                                                    let lo = (generator.gen_amount & 0xFF) as u8;
+                                                    let hi =
+                                                        ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                                    if key < lo || key > hi {
+                                                        key_in_range_i = false;
+                                                    }
+                                                }
+                                                GeneratorOperator::VelRange => {
+                                                    let lo = (generator.gen_amount & 0xFF) as u8;
+                                                    let hi =
+                                                        ((generator.gen_amount >> 8) & 0xFF) as u8;
+                                                    if velocity < lo || velocity > hi {
+                                                        vel_in_range_i = false;
+                                                    }
+                                                }
+                                                GeneratorOperator::SampleID => {
+                                                    sample_id = Some(generator.gen_amount as usize);
+                                                }
+                                                GeneratorOperator::OverridingRootKey => {
+                                                    overriding_root_key =
+                                                        Some(generator.gen_amount as u8);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
 
-            for g in gen_start..gen_end {
-                if let Some(generator) = soundfont.instrument_generators.get(g) {
-                    if (generator.gen_oper as usize) < 60 {
-                        local_gens[generator.gen_oper as usize] = Some(generator.gen_amount);
-                    }
-                    if let Ok(op) = std::convert::TryFrom::try_from(generator.gen_oper) {
-                        match op {
-                            GeneratorOperator::KeyRange => {
-                                // keyRange
-                                let lo = (generator.gen_amount & 0xFF) as u8;
-                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                                if key < lo || key > hi {
-                                    key_in_range = false;
+                                if sample_id.is_none() && ib == ibag_start {
+                                    i_global_gens = inst_local_gens;
+                                    continue;
+                                }
+
+                                if key_in_range_i && vel_in_range_i {
+                                    if let Some(sid) = sample_id {
+                                        let get_gen =
+                                            |oper: GeneratorOperator, default: i16| -> i16 {
+                                                let op_idx = oper as usize;
+                                                let inst_val = inst_local_gens[op_idx]
+                                                    .or(i_global_gens[op_idx])
+                                                    .unwrap_or(default);
+                                                let preset_val = preset_gens[op_idx]
+                                                    .or(p_global_gens[op_idx])
+                                                    .unwrap_or(0);
+                                                inst_val.saturating_add(preset_val)
+                                            };
+
+                                        let delay = get_gen(GeneratorOperator::DelayVolEnv, -12000);
+                                        let attack =
+                                            get_gen(GeneratorOperator::AttackVolEnv, -12000);
+                                        let hold = get_gen(GeneratorOperator::HoldVolEnv, -12000);
+                                        let decay = get_gen(GeneratorOperator::DecayVolEnv, -12000);
+                                        let sustain = get_gen(GeneratorOperator::SustainVolEnv, 0);
+                                        let release =
+                                            get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
+
+                                        let initial_filter_fc =
+                                            get_gen(GeneratorOperator::InitialFilterFc, 13500);
+                                        let initial_filter_q =
+                                            get_gen(GeneratorOperator::InitialFilterQ, 0);
+                                        let sample_modes =
+                                            get_gen(GeneratorOperator::SampleModes, 0);
+
+                                        let delay_sec = if delay <= -12000 {
+                                            0.0
+                                        } else {
+                                            2.0_f64.powf(delay as f64 / 1200.0)
+                                        };
+                                        let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);
+                                        let hold_sec = if hold <= -12000 {
+                                            0.0
+                                        } else {
+                                            2.0_f64.powf(hold as f64 / 1200.0)
+                                        };
+                                        let decay_sec = 2.0_f64.powf(decay as f64 / 1200.0);
+                                        let release_sec = 2.0_f64.powf(release as f64 / 1200.0);
+                                        let sustain_level =
+                                            10.0_f64.powf(-(sustain as f64) / 200.0);
+
+                                        let adsr = Adsr {
+                                            delay: delay_sec,
+                                            attack: attack_sec.max(0.001),
+                                            hold: hold_sec,
+                                            decay: decay_sec.max(0.001),
+                                            sustain: sustain_level.clamp(0.0, 1.0),
+                                            release: release_sec.max(0.001),
+                                        };
+
+                                        return Some((
+                                            sid,
+                                            overriding_root_key,
+                                            adsr,
+                                            initial_filter_fc as f32,
+                                            initial_filter_q as f32,
+                                            sample_modes as u16,
+                                        ));
+                                    }
                                 }
                             }
-                            GeneratorOperator::VelRange => {
-                                // velRange
-                                let lo = (generator.gen_amount & 0xFF) as u8;
-                                let hi = ((generator.gen_amount >> 8) & 0xFF) as u8;
-                                if velocity < lo || velocity > hi {
-                                    vel_in_range = false;
-                                }
-                            }
-                            GeneratorOperator::SampleID => {
-                                // sampleID
-                                sample_id = Some(generator.gen_amount as usize);
-                            }
-                            GeneratorOperator::OverridingRootKey => {
-                                // overridingRootKey
-                                overriding_root_key = Some(generator.gen_amount as u8);
-                            }
-                            _ => {}
                         }
                     }
-                }
-            }
-
-            if sample_id.is_none() && b == ibag_start {
-                i_global_gens = local_gens;
-                continue;
-            }
-
-            if key_in_range && vel_in_range {
-                if let Some(id) = sample_id {
-                    let get_gen = |oper: GeneratorOperator, default: i16| -> i16 {
-                        let op_idx = oper as usize;
-                        // Priority: Instrument Local > Instrument Global
-                        let inst_val = local_gens[op_idx]
-                            .or(i_global_gens[op_idx])
-                            .unwrap_or(default);
-                        // Add Preset Local > Preset Global (default offset 0)
-                        let preset_val = preset_gens[op_idx].or(p_global_gens[op_idx]).unwrap_or(0);
-                        inst_val.saturating_add(preset_val)
-                    };
-
-                    let delay = get_gen(GeneratorOperator::DelayVolEnv, -12000);
-                    let attack = get_gen(GeneratorOperator::AttackVolEnv, -12000);
-                    let hold = get_gen(GeneratorOperator::HoldVolEnv, -12000);
-                    let decay = get_gen(GeneratorOperator::DecayVolEnv, -12000);
-                    let sustain = get_gen(GeneratorOperator::SustainVolEnv, 0);
-                    let release = get_gen(GeneratorOperator::ReleaseVolEnv, -12000);
-
-                    let initial_filter_fc = get_gen(GeneratorOperator::InitialFilterFc, 13500);
-                    let initial_filter_q = get_gen(GeneratorOperator::InitialFilterQ, 0);
-
-                    // 1200 cents = 1 octave = factor of 2
-                    let delay_sec = if delay <= -12000 {
-                        0.0
-                    } else {
-                        2.0_f64.powf(delay as f64 / 1200.0)
-                    };
-                    let attack_sec = 2.0_f64.powf(attack as f64 / 1200.0);
-                    let hold_sec = if hold <= -12000 {
-                        0.0
-                    } else {
-                        2.0_f64.powf(hold as f64 / 1200.0)
-                    };
-                    let decay_sec = 2.0_f64.powf(decay as f64 / 1200.0);
-                    let release_sec = 2.0_f64.powf(release as f64 / 1200.0);
-
-                    // sustain is in centibels of attenuation
-                    let sustain_level = 10.0_f64.powf(-(sustain as f64) / 200.0);
-
-                    let adsr = Adsr {
-                        delay: delay_sec,
-                        attack: attack_sec.max(0.001),
-                        hold: hold_sec,
-                        decay: decay_sec.max(0.001),
-                        sustain: sustain_level.clamp(0.0, 1.0),
-                        release: release_sec.max(0.001),
-                    };
-
-                    return Some((
-                        id,
-                        overriding_root_key,
-                        adsr,
-                        initial_filter_fc as f32,
-                        initial_filter_q as f32,
-                    ));
                 }
             }
         }
@@ -492,5 +518,36 @@ mod tests {
         assert_eq!(SoundSource::midi_key_to_freq(21), 27.5);
         assert_eq!(SoundSource::midi_key_to_freq(57), 220.0);
         assert_eq!(SoundSource::midi_key_to_freq(81), 880.0);
+    }
+
+    #[test]
+    fn test_find_percussion_samples() {
+        let sf2_data = std::fs::read("test.sf2");
+        if let Ok(data) = sf2_data {
+            use crate::soundfont::SoundFont;
+            let sf = SoundFont::parse(&data).expect("Failed to parse test.sf2");
+
+            let bank = 128;
+            let program = 16;
+            let velocity = 100;
+
+            println!("Testing drum kit Bank: {}, Program: {}", bank, program);
+
+            for key in 35..=81 {
+                let result = SoundSource::find_sample_index(&sf, bank, program, key, velocity);
+                assert!(
+                    result.is_some(),
+                    "Failed to find sample for percussion key {} in Bank {} Program {}",
+                    key,
+                    bank,
+                    program
+                );
+                if let Some((idx, _, _, _, _, _)) = result {
+                    println!("Key: {:>2} -> Sample Index: {}", key, idx);
+                }
+            }
+        } else {
+            println!("test.sf2 not found. Skipping percussion test.");
+        }
     }
 }

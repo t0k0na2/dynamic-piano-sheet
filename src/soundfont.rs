@@ -625,7 +625,6 @@ mod tests {
             assert!(sf.sample_headers.len() > 0);
             assert!(sf.sample_data.len() > 0);
 
-            /*
             sf.preset_headers.iter().for_each(|preset| {
                 println!(
                     "Preset p:{} b:{} name:{}",
@@ -633,33 +632,33 @@ mod tests {
                 );
             });
 
+            /*
             sf.sample_headers.iter().for_each(|sample| {
                 println!(
                     "Sample name:{} start:{} end:{} smpl_rate:{}",
                     sample.name, sample.start, sample.end, sample.sample_rate
                 );
             });
+
+                        let mut preset_gen_counts = std::collections::BTreeMap::new();
+                        for generator in &sf.preset_generators {
+                            *preset_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
+                        }
+                        for (gen_oper, _count) in &preset_gen_counts {
+                            println!("Preset gen_oper {}", GENERATOR_NAMES[*gen_oper as usize]);
+                        }
+
+                        let mut inst_gen_counts = std::collections::BTreeMap::new();
+                        for generator in &sf.instrument_generators {
+                            *inst_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
+                        }
+                        for (gen_oper, _count) in &inst_gen_counts {
+                            println!(
+                                "Instrument gen_oper {}",
+                                GENERATOR_NAMES[*gen_oper as usize]
+                            );
+                        }
             */
-
-            let mut preset_gen_counts = std::collections::BTreeMap::new();
-            for generator in &sf.preset_generators {
-                *preset_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
-            }
-            for (gen_oper, _count) in &preset_gen_counts {
-                println!("Preset gen_oper {}", GENERATOR_NAMES[*gen_oper as usize]);
-            }
-
-            let mut inst_gen_counts = std::collections::BTreeMap::new();
-            for generator in &sf.instrument_generators {
-                *inst_gen_counts.entry(generator.gen_oper).or_insert(0) += 1;
-            }
-            for (gen_oper, _count) in &inst_gen_counts {
-                println!(
-                    "Instrument gen_oper {}",
-                    GENERATOR_NAMES[*gen_oper as usize]
-                );
-            }
-
             println!(
                 "Parsed SF2: {} presets, {} samples, {} waveform words",
                 sf.preset_headers.len(),
