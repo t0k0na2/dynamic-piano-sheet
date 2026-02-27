@@ -107,8 +107,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         vel.as_int(),
                                         i as u8,
                                         track_state.program,
-                                        (track_state.bank_msb as u16) * 128
-                                            + track_state.bank_lsb as u16,
+                                        (track_state.bank_msb as u16), // * 128 + track_state.bank_lsb as u16, SoundFontはmsbのみを使用
                                     ));
                                     if let Some(id) = playing_notes.insert(hash_key, note_id) {
                                         notes[id].set_off_time(current_time);
@@ -256,9 +255,6 @@ impl MidiPlayer {
 
         // 音が重なるとノイズが気になるので出力の手前にコンプ刺す
         let comp = audio_context.create_dynamics_compressor()?;
-        comp.threshold().set_value(-20.0);
-        comp.knee().set_value(15.0);
-        comp.ratio().set_value(20.0);
         comp.connect_with_audio_node(&master_volume)?;
 
         Ok(MidiPlayer {

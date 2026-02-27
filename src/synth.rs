@@ -245,7 +245,29 @@ impl SoundSource {
         let preset_idx = soundfont
             .preset_headers
             .iter()
-            .position(|p| p.preset == program as u16 && p.bank == bank)?;
+            .position(|p| p.preset == program as u16 && p.bank == bank)
+            // 該当がなければ別のBank/Programにフォールバック
+            .or_else(|| {
+                if bank == 128 {
+                    // パーカッションで該当キットがない場合は標準ドラムキット(Bank 128, Preset 0)にフォールバック
+                    soundfont
+                        .preset_headers
+                        .iter()
+                        .position(|p| p.preset == 0 && p.bank == 128)
+                } else {
+                    // 通常楽器の場合は他のBankで同じProgramを探す(ただしBank 128のパーカッション以外)
+                    soundfont
+                        .preset_headers
+                        .iter()
+                        .position(|p| p.preset == program as u16 && p.bank != 128)
+                }
+            })
+            .or_else(|| {
+                soundfont
+                    .preset_headers
+                    .iter()
+                    .position(|p| p.preset == 0 && p.bank == 0)
+            })?;
 
         let pbag_start = soundfont.preset_headers[preset_idx].preset_bag_ndx as usize;
         let pbag_end = soundfont
@@ -456,7 +478,7 @@ impl SoundSource {
     }
 
     fn velocity_to_ratio(velocity: u8) -> f64 {
-        velocity as f64 / 127.0
+        (velocity as f32 / 127.0).powi(2) as f64
     }
 
     pub fn tick(&mut self, delta_sec: f64) {
@@ -501,6 +523,37 @@ mod tests {
 
             let bank = 128;
             let program = 16;
+            let velocity = 100;
+
+            println!("Testing drum kit Bank: {}, Program: {}", bank, program);
+
+            for key in 35..=81 {
+                let result = SoundSource::find_sample_index(&sf, bank, program, key, velocity);
+                assert!(
+                    result.is_some(),
+                    "Failed to find sample for percussion key {} in Bank {} Program {}",
+                    key,
+                    bank,
+                    program
+                );
+                if let Some((idx, _, _, _, _, _)) = result {
+                    println!("Key: {:>2} -> Sample Index: {}", key, idx);
+                }
+            }
+        } else {
+            println!("test.sf2 not found. Skipping percussion test.");
+        }
+    }
+
+    #[test]
+    fn test_find_samples() {
+        let sf2_data = std::fs::read("test.sf2");
+        if let Ok(data) = sf2_data {
+            use crate::soundfont::SoundFont;
+            let sf = SoundFont::parse(&data).expect("Failed to parse test.sf2");
+
+            let bank = 121;
+            let program = 1;
             let velocity = 100;
 
             println!("Testing drum kit Bank: {}, Program: {}", bank, program);
