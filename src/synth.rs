@@ -85,6 +85,8 @@ impl SoundSource {
             filter_q,
             sample_modes,
             sample_offsets,
+            coarse_tune,
+            fine_tune,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -122,6 +124,12 @@ impl SoundSource {
             60.0
         };
 
+        let pitch_correction = if let Some(h) = shdr {
+            h.pitch_correction as f32
+        } else {
+            0.0
+        };
+
         // overridingRootKey が指定されている場合は優先
         if let Some(root_key) = overriding_root_key {
             // SF2の仕様では0~127が有効とされている
@@ -130,7 +138,12 @@ impl SoundSource {
             }
         }
 
-        let playback_rate = 2.0_f32.powf((key as f32 - original_pitch) / 12.0);
+        let key_pitch = key as f32;
+        // ピッチの計算
+        // playback_rate = 2^( (key - originalPitch + coarseTune) / 12 + (pitchCorrection + fineTune) / 1200 )
+        let exponent = (key_pitch - original_pitch + coarse_tune as f32) / 12.0
+            + (pitch_correction + fine_tune as f32) / 1200.0;
+        let playback_rate = 2.0_f32.powf(exponent);
 
         // 動的にAudioBufferを生成する
         let audio_buffer = if let Some(h) = shdr {
@@ -263,7 +276,17 @@ impl SoundSource {
         program: u8,
         key: u8,
         velocity: u8,
-    ) -> Option<(usize, Option<u8>, Adsr, f32, f32, u16, SampleOffsets)> {
+    ) -> Option<(
+        usize,
+        Option<u8>,
+        Adsr,
+        f32,
+        f32,
+        u16,
+        SampleOffsets,
+        f32,
+        f32,
+    )> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
             .preset_headers
@@ -501,6 +524,9 @@ impl SoundSource {
                                         let sustain_level =
                                             10.0_f64.powf(-(sustain as f64) / 200.0);
 
+                                        let coarse_tune = get_gen(GeneratorOperator::CoarseTune, 0);
+                                        let fine_tune = get_gen(GeneratorOperator::FineTune, 0);
+
                                         let adsr = Adsr {
                                             delay: delay_sec,
                                             attack: attack_sec.max(0.001),
@@ -518,6 +544,8 @@ impl SoundSource {
                                             initial_filter_q as f32,
                                             sample_modes as u16,
                                             sample_offsets,
+                                            coarse_tune as f32,
+                                            fine_tune as f32,
                                         ));
                                     }
                                 }
@@ -590,7 +618,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -621,7 +649,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
