@@ -1,4 +1,4 @@
-import init, { MidiPlayer, SynthType } from "./pkg/dynamic_piano_sheet.js";
+import init, { MidiPlayer } from "./pkg/dynamic_piano_sheet.js";
 init().then((wasm) => {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
@@ -76,17 +76,6 @@ init().then((wasm) => {
   speed_slider.addEventListener('input', (event) => {
     playbackSpeed = speed_slider.valueAsNumber;
     speed_label.textContent = playbackSpeed.toFixed(1) + "x";
-  });
-
-  // 音源選択ラジオボタン
-  document.querySelectorAll('input[name="sound-source"]').forEach((radio) => {
-    radio.addEventListener('change', (event) => {
-      const selected = event.target.value;
-      const type = SynthType[selected];
-      if (type !== undefined) {
-        midi_player.set_sound_source(type);
-      }
-    });
   });
 
   // MIDIファイルの読み込み処理
@@ -244,13 +233,7 @@ init().then((wasm) => {
       .then(buffer => {
         if (buffer) {
           midi_player.load_soundfont(new Uint8Array(buffer));
-          // 読み込みに成功したらラジオボタンのUIを更新し、音源ソースを設定する
-          const sfRadio = document.querySelector('input[name="sound-source"][value="SoundFont"]');
-          if (sfRadio) {
-            sfRadio.checked = true;
-          }
-          midi_player.set_sound_source(SynthType.SoundFont);
-          console.log("Auto-loaded test.sf2 and set SynthType to SoundFont.");
+          console.log("Auto-loaded test.sf2.");
         }
       })
       .catch(err => console.log("Auto-load SoundFont skipped:", err));

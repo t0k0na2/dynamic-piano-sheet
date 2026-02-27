@@ -1,15 +1,6 @@
 use crate::soundfont::{GeneratorOperator, SoundFont};
 use wasm_bindgen::prelude::*;
-use web_sys::{AudioNode, BaseAudioContext, BiquadFilterType, OscillatorType};
-
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SynthType {
-    Analog,
-    FM,
-    Origin,
-    SoundFont,
-}
+use web_sys::{AudioNode, BaseAudioContext};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Adsr {
@@ -35,283 +26,28 @@ impl SoundSource {
         bank: u16,
         start_time: f64,
         end_time: f64,
-        synth_type: SynthType,
         soundfont: Option<&SoundFont>,
     ) -> Result<SoundSource, JsValue> {
-        match synth_type {
-            SynthType::Analog => Self::new_analog(
+        if let Some(sf) = soundfont {
+            Self::new_soundfont(
                 context,
                 destination_target,
                 key,
                 velocity,
+                program,
+                bank,
                 start_time,
                 end_time,
-            ),
-            SynthType::FM => Self::new_fm(
-                context,
-                destination_target,
-                key,
-                velocity,
-                start_time,
-                end_time,
-            ),
-            SynthType::Origin => Self::new_origin(
-                context,
-                destination_target,
-                key,
-                velocity,
-                start_time,
-                end_time,
-            ),
-            SynthType::SoundFont => {
-                if let Some(sf) = soundfont {
-                    Self::new_soundfont(
-                        context,
-                        destination_target,
-                        key,
-                        velocity,
-                        program,
-                        bank,
-                        start_time,
-                        end_time,
-                        sf,
-                    )
-                } else {
-                    // Fallback to Analog if SoundFont data is missing
-                    Self::new_analog(
-                        context,
-                        destination_target,
-                        key,
-                        velocity,
-                        start_time,
-                        end_time,
-                    )
-                }
-            }
+                sf,
+            )
+        } else {
+            // Fallback to silence if SoundFont data is missing
+            Ok(SoundSource {
+                nodes: vec![],
+                now_time: start_time,
+                end_time: start_time,
+            })
         }
-    }
-
-    fn new_analog(
-        context: &BaseAudioContext,
-        destination_target: &AudioNode,
-        key: u8,
-        velocity: u8,
-        start_time: f64,
-        end_time: f64,
-    ) -> Result<SoundSource, JsValue> {
-        let adsr = Adsr {
-            attack: 0.01,
-            decay: 0.3,
-            sustain: 0.4,
-            release: 0.8,
-        };
-        let freq = Self::midi_key_to_freq(key);
-        let velocity = Self::velocity_to_ratio(velocity);
-        let sus_begin = start_time + adsr.attack + adsr.decay;
-        let end_time = end_time.max(sus_begin);
-
-        // 1. VCO
-        let vco = context.create_oscillator()?;
-        vco.set_type(OscillatorType::Sawtooth);
-        vco.frequency().set_value(freq as f32);
-
-        // Pitch Envelope
-        vco.frequency()
-            .set_value_at_time((freq * 1.015) as f32, start_time)?;
-        vco.frequency()
-            .exponential_ramp_to_value_at_time(freq as f32, start_time + 0.08)?;
-
-        // 2. VCF
-        let vcf = context.create_biquad_filter()?;
-        vcf.set_type(BiquadFilterType::Lowpass);
-        vcf.q().set_value(1.0);
-
-        let base_freq = freq * 1.5;
-        let peak_freq = freq * 8.0 * velocity;
-
-        let vcf_freq = vcf.frequency();
-        vcf_freq.set_value_at_time(base_freq as f32, start_time)?;
-        vcf_freq.linear_ramp_to_value_at_time(peak_freq as f32, start_time + adsr.attack)?;
-
-        // Filter Sustain
-        let vcf_sus = base_freq + (peak_freq - base_freq) * adsr.sustain * 0.5;
-        let target_sus = if vcf_sus < 100.0 { 100.0 } else { vcf_sus };
-        vcf_freq.exponential_ramp_to_value_at_time(target_sus as f32, sus_begin)?;
-        vcf_freq.set_value_at_time(target_sus as f32, end_time)?;
-        vcf_freq.exponential_ramp_to_value_at_time(base_freq as f32, end_time + adsr.release)?;
-
-        // 3. VCA
-        let vca = context.create_gain()?;
-        let vca_gain = vca.gain();
-
-        vca_gain.set_value_at_time(0.0, start_time)?;
-        vca_gain.linear_ramp_to_value_at_time(1.0 * velocity as f32, start_time + adsr.attack)?;
-        let vca_sus = (adsr.sustain * velocity).max(0.0001);
-        vca_gain.exponential_ramp_to_value_at_time(vca_sus as f32, sus_begin)?;
-        vca_gain.set_value_at_time(vca_sus as f32, end_time)?;
-        vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
-
-        // Connection
-        vco.connect_with_audio_node(&vcf)?;
-        vcf.connect_with_audio_node(&vca)?;
-        vca.connect_with_audio_node(destination_target)?;
-
-        // play
-        vco.start_with_when(start_time)?;
-        vco.stop_with_when(end_time + adsr.release + 0.1)?;
-
-        // Cleanup time
-        let cleanup_time = end_time + adsr.release + 0.2;
-
-        Ok(SoundSource {
-            nodes: vec![vco.into(), vcf.into(), vca.into()],
-            now_time: start_time,
-            end_time: cleanup_time,
-        })
-    }
-
-    fn new_fm(
-        context: &BaseAudioContext,
-        destination_target: &AudioNode,
-        key: u8,
-        velocity: u8,
-        start_time: f64,
-        end_time: f64,
-    ) -> Result<SoundSource, JsValue> {
-        let freq = Self::midi_key_to_freq(key);
-        let velocity = Self::velocity_to_ratio(velocity);
-
-        let adsr = Adsr {
-            attack: 0.01,
-            decay: 0.3,
-            sustain: 0.4,
-            release: 0.8,
-        };
-
-        let end_time = end_time.max(start_time + adsr.attack + adsr.decay);
-
-        let carrier = context.create_oscillator()?;
-        let modulator = context.create_oscillator()?;
-        let amp_gain = context.create_gain()?;
-        let modulator_gain = context.create_gain()?;
-
-        // 2. 基本設定
-        carrier.set_type(OscillatorType::Sine);
-        modulator.set_type(OscillatorType::Sine);
-
-        // ピアノらしい Ratio (C:M) = 1:1.001
-        carrier.frequency().set_value(freq as f32);
-        modulator.frequency().set_value((freq * 1.001) as f32);
-
-        // 3. モジュレーターのエンベロープ（音色の変化）
-        let index: f64 = 3.0; // FMの強さ
-        modulator_gain
-            .gain()
-            .set_value_at_time((freq * index * velocity) as f32, start_time)?;
-        modulator_gain
-            .gain()
-            .exponential_ramp_to_value_at_time(0.01 as f32, start_time + 0.3)?;
-
-        // 4. アンプのエンベロープ（音量の変化）
-        amp_gain.gain().set_value_at_time(0.0, start_time)?;
-        amp_gain
-            .gain()
-            .linear_ramp_to_value_at_time((velocity) as f32, start_time + adsr.attack)?; // Attack
-        amp_gain.gain().exponential_ramp_to_value_at_time(
-            (velocity * adsr.sustain) as f32,
-            start_time + adsr.attack + adsr.decay,
-        )?; // Decay
-        amp_gain
-            .gain()
-            .set_value_at_time((velocity * adsr.sustain) as f32, end_time)?; // Sustain
-        amp_gain
-            .gain()
-            .exponential_ramp_to_value_at_time(0.0001 as f32, end_time + adsr.release)?; // Release
-
-        // 5. 接続
-        modulator.connect_with_audio_node(&modulator_gain)?;
-        modulator_gain.connect_with_audio_param(&carrier.frequency())?;
-        carrier.connect_with_audio_node(&amp_gain)?;
-        amp_gain.connect_with_audio_node(destination_target)?;
-
-        // 6. 再生開始
-        modulator.start_with_when(start_time)?;
-        carrier.start_with_when(start_time)?;
-        modulator.stop_with_when(end_time + adsr.release + 0.1)?;
-        carrier.stop_with_when(end_time + adsr.release + 0.1)?;
-
-        let cleanup_time = end_time + adsr.release + 0.2;
-
-        Ok(SoundSource {
-            nodes: vec![
-                carrier.into(),
-                modulator.into(),
-                amp_gain.into(),
-                modulator_gain.into(),
-            ],
-            now_time: start_time,
-            end_time: cleanup_time,
-        })
-    }
-
-    fn new_origin(
-        context: &BaseAudioContext,
-        destination_target: &AudioNode,
-        key: u8,
-        velocity: u8,
-        start_time: f64,
-        end_time: f64,
-    ) -> Result<SoundSource, JsValue> {
-        let adsr = Adsr {
-            attack: 0.01,
-            decay: 0.2,
-            sustain: 0.5,
-            release: 1.0,
-        };
-        let freq = Self::midi_key_to_freq(key);
-        let velocity = Self::velocity_to_ratio(velocity);
-        let sus_begin = start_time + adsr.attack + adsr.decay;
-        let end_time = end_time.max(sus_begin);
-
-        // 1. VCO
-        let vco = context.create_oscillator()?;
-        vco.set_type(OscillatorType::Sawtooth);
-        vco.frequency().set_value(freq as f32);
-
-        // 2. VCF
-        let vcf = context.create_biquad_filter()?;
-        vcf.set_type(BiquadFilterType::Lowpass);
-        vcf.frequency().set_value((freq * 4.0).min(10000.0) as f32);
-        vcf.frequency()
-            .linear_ramp_to_value_at_time((freq * 0.5) as f32, end_time)?;
-
-        // 3. VCA
-        let vca = context.create_gain()?;
-        let vca_gain = vca.gain();
-
-        vca_gain.set_value_at_time(0.0, start_time)?;
-        vca_gain.linear_ramp_to_value_at_time(velocity as f32, start_time + adsr.attack)?;
-        vca_gain.linear_ramp_to_value_at_time((velocity * adsr.sustain) as f32, sus_begin)?;
-        vca_gain.set_value_at_time((velocity * adsr.sustain) as f32, end_time)?;
-        vca_gain.linear_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
-
-        // Connection
-        vco.connect_with_audio_node(&vcf)?;
-        vcf.connect_with_audio_node(&vca)?;
-        vca.connect_with_audio_node(destination_target)?;
-
-        // play
-        vco.start_with_when(start_time)?;
-        vco.stop_with_when(end_time + adsr.release + 0.1)?;
-
-        // Cleanup time
-        let cleanup_time = end_time + adsr.release + 0.2;
-
-        Ok(SoundSource {
-            nodes: vec![vco.into(), vcf.into(), vca.into()],
-            now_time: start_time,
-            end_time: cleanup_time,
-        })
     }
 
     fn new_soundfont(
