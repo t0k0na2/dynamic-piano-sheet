@@ -106,6 +106,7 @@ impl SoundSource {
             fine_tune,
             mod_lfo,
             vib_lfo,
+            scale_tuning,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -159,8 +160,11 @@ impl SoundSource {
 
         let key_pitch = key as f32;
         // ピッチの計算
-        // playback_rate = 2^( (key - originalPitch + coarseTune) / 12 + (pitchCorrection + fineTune) / 1200 )
-        let exponent = (key_pitch - original_pitch + coarse_tune as f32) / 12.0
+        // Scale Tuning が指定されていれば、それがピッチのスケーリングに使われる（デフォルト 100% = 1.0）
+        // パーカッション(Channel 10)などで Scale Tuning が0の場合はキーによるピッチ変化がおきない
+        let scale_tuning_ratio = scale_tuning / 100.0;
+        let exponent = ((key_pitch - original_pitch) * scale_tuning_ratio + coarse_tune as f32)
+            / 12.0
             + (pitch_correction + fine_tune as f32) / 1200.0;
         let playback_rate = 2.0_f32.powf(exponent);
 
@@ -438,6 +442,7 @@ impl SoundSource {
         f32,
         LfoParams,
         LfoParams,
+        f32,
     )> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
@@ -552,7 +557,6 @@ impl SoundSource {
                                 let mut key_in_range_i = true;
                                 let mut vel_in_range_i = true;
                                 let mut sample_id = None;
-                                let mut overriding_root_key = None;
                                 let mut inst_local_gens = [None; 60];
 
                                 for ig in igen_start..igen_end {
@@ -584,10 +588,6 @@ impl SoundSource {
                                                 }
                                                 GeneratorOperator::SampleID => {
                                                     sample_id = Some(generator.gen_amount as usize);
-                                                }
-                                                GeneratorOperator::OverridingRootKey => {
-                                                    overriding_root_key =
-                                                        Some(generator.gen_amount as u8);
                                                 }
                                                 _ => {}
                                             }
@@ -791,9 +791,24 @@ impl SoundSource {
                                             release: release_sec.max(0.001),
                                         };
 
+                                        let ork = inst_local_gens
+                                            [GeneratorOperator::OverridingRootKey as usize]
+                                            .or(i_global_gens
+                                                [GeneratorOperator::OverridingRootKey as usize])
+                                            .unwrap_or(-1);
+                                        let calculated_overriding_root_key =
+                                            if ork >= 0 && ork <= 127 {
+                                                Some(ork as u8)
+                                            } else {
+                                                None
+                                            };
+
+                                        let scale_tuning =
+                                            get_gen(GeneratorOperator::ScaleTuning, 100) as f32;
+
                                         return Some((
                                             sid,
-                                            overriding_root_key,
+                                            calculated_overriding_root_key,
                                             adsr,
                                             mod_env,
                                             initial_filter_fc as f32,
@@ -804,6 +819,7 @@ impl SoundSource {
                                             fine_tune as f32,
                                             mod_lfo,
                                             vib_lfo,
+                                            scale_tuning,
                                         ));
                                     }
                                 }
@@ -876,7 +892,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -907,7 +923,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
