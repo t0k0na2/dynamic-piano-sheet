@@ -425,6 +425,7 @@ impl MidiPlayer {
                     &self.comp,
                     note.key(),
                     note.velocity(),
+                    note.track() + 1,
                     note.program(),
                     note.bank(),
                     start_time,
