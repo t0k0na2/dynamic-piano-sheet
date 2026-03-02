@@ -45,6 +45,8 @@ features = [
     'OfflineAudioCompletionEvent',
     'AudioBuffer',
     'AudioBufferSourceNode',
+    'ConvolverNode',
+    'DelayNode',
 ]
 
 [dev-dependencies]

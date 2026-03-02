@@ -47,7 +47,9 @@ pub struct SoundSource {
 impl SoundSource {
     pub fn new(
         context: &BaseAudioContext,
-        destination_target: &AudioNode,
+        dry_send: &AudioNode,
+        reverb_send: &AudioNode,
+        chorus_send: &AudioNode,
         key: u8,
         velocity: u8,
         channel_volumes: &[VolumeEvent],
@@ -63,7 +65,9 @@ impl SoundSource {
         if let Some(sf) = soundfont {
             Self::new_soundfont(
                 context,
-                destination_target,
+                dry_send,
+                reverb_send,
+                chorus_send,
                 key,
                 velocity,
                 channel_volumes,
@@ -88,7 +92,9 @@ impl SoundSource {
 
     fn new_soundfont(
         context: &BaseAudioContext,
-        destination_target: &AudioNode,
+        dry_send: &AudioNode,
+        reverb_send: &AudioNode,
+        chorus_send: &AudioNode,
         key: u8,
         velocity: u8,
         channel_volumes: &[VolumeEvent],
@@ -133,7 +139,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity); // * _vol_factor as f64;
+        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -449,7 +455,7 @@ impl SoundSource {
         } else {
             vca.connect_with_audio_node(&ch_vol_node)?;
         }
-        ch_vol_node.connect_with_audio_node(destination_target)?;
+        ch_vol_node.connect_with_audio_node(chorus_send)?;
 
         // Play
         // AudioBufferを切り出しているのでオフセットを0にする

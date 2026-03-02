@@ -13,7 +13,10 @@ use synth::SoundSource;
 use wasm_bindgen::prelude::*;
 
 use midly::{Format, MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
-use web_sys::{AudioContext, CanvasRenderingContext2d, DynamicsCompressorNode, GainNode};
+use web_sys::{
+    AudioContext, CanvasRenderingContext2d, ConvolverNode, DelayNode, DynamicsCompressorNode,
+    GainNode, OscillatorNode,
+};
 
 fn bpm_to_tempo(bpm: f64) -> f64 {
     60000000.0 / bpm
@@ -462,9 +465,87 @@ fn calc_key_area(rect: &Rectangle, min_key: u8, max_key: u8) -> Vec<Rectangle> {
     ret
 }
 
+pub struct ChorusNode {
+    input: GainNode,
+    output: GainNode,
+    _delay: DelayNode,
+    _lfo: OscillatorNode,
+    _lfo_depth: GainNode,
+    _dry_gain: GainNode,
+    _wet_gain: GainNode,
+}
+
+impl ChorusNode {
+    pub fn new(
+        audio_ctx: &AudioContext,
+        rate: Option<f32>,
+        depth: Option<f32>,
+        delay_time: Option<f64>,
+        dry: Option<f32>,
+        wet: Option<f32>,
+    ) -> Result<Self, JsValue> {
+        let rate = rate.unwrap_or(1.5);
+        let depth = depth.unwrap_or(0.002);
+        let delay_time = delay_time.unwrap_or(0.02);
+        let dry = dry.unwrap_or(0.7);
+        let wet = wet.unwrap_or(0.7);
+
+        let input = audio_ctx.create_gain()?;
+        let output = audio_ctx.create_gain()?;
+
+        let dry_gain = audio_ctx.create_gain()?;
+        let wet_gain = audio_ctx.create_gain()?;
+
+        let delay = audio_ctx.create_delay()?;
+        let lfo = audio_ctx.create_oscillator()?;
+        let lfo_depth = audio_ctx.create_gain()?;
+
+        delay.delay_time().set_value(delay_time as f32);
+        lfo.set_type(web_sys::OscillatorType::Sine);
+        lfo.frequency().set_value(rate);
+        lfo_depth.gain().set_value(depth);
+        dry_gain.gain().set_value(dry);
+        wet_gain.gain().set_value(wet);
+
+        input.connect_with_audio_node(&dry_gain)?;
+        dry_gain.connect_with_audio_node(&output)?;
+
+        input.connect_with_audio_node(&delay)?;
+        delay.connect_with_audio_node(&wet_gain)?;
+        wet_gain.connect_with_audio_node(&output)?;
+
+        lfo.connect_with_audio_node(&lfo_depth)?;
+        lfo_depth.connect_with_audio_param(&delay.delay_time())?;
+        lfo.start()?;
+
+        Ok(Self {
+            input,
+            output,
+            _delay: delay,
+            _lfo: lfo,
+            _lfo_depth: lfo_depth,
+            _dry_gain: dry_gain,
+            _wet_gain: wet_gain,
+        })
+    }
+
+    pub fn input(&self) -> &GainNode {
+        &self.input
+    }
+
+    pub fn connect_with_audio_node(
+        &self,
+        target: &web_sys::AudioNode,
+    ) -> Result<web_sys::AudioNode, JsValue> {
+        self.output.connect_with_audio_node(target)
+    }
+}
+
 #[wasm_bindgen]
 pub struct MidiPlayer {
     audio_context: AudioContext,
+    reverb: ConvolverNode,
+    chorus: ChorusNode,
     comp: DynamicsCompressorNode,
     master_volume: GainNode,
     sound_sources: Vec<SoundSource>,
@@ -477,6 +558,57 @@ pub struct MidiPlayer {
     loop_start_bar: usize,
     loop_end_bar: usize,
     soundfont: Option<SoundFont>,
+}
+
+pub fn create_rich_synthesized_reverb(
+    audio_ctx: &AudioContext,
+    duration: Option<f64>,
+    decay: Option<f64>,
+    pre_delay_ms: Option<f64>,
+) -> Result<ConvolverNode, JsValue> {
+    let duration = duration.unwrap_or(2.0);
+    let decay = decay.unwrap_or(2.0);
+    let pre_delay_ms = pre_delay_ms.unwrap_or(30.0);
+
+    let sample_rate = audio_ctx.sample_rate();
+    let length = (sample_rate as f64 * duration) as u32;
+    // create_bufferの引数は (numOfChannels, length, sampleRate) です
+    let impulse = audio_ctx.create_buffer(2, length, sample_rate)?;
+
+    let pre_delay_samples = ((pre_delay_ms / 1000.0) * sample_rate as f64).floor() as u32;
+
+    for i in 0..2 {
+        let mut channel_data = vec![0.0f32; length as usize];
+        let mut last_out = 0.0;
+
+        for j in 0..length {
+            // 1. プリディレイ：指定サンプル数までは無音（0）にする
+            if j < pre_delay_samples {
+                channel_data[j as usize] = 0.0;
+                continue;
+            }
+
+            // 2. 指数関数的な減衰カーブ
+            let multiplier = (1.0
+                - (j - pre_delay_samples) as f64 / (length - pre_delay_samples) as f64)
+                .powf(decay);
+
+            // 3. ホワイトノイズの生成
+            let white_noise = (js_sys::Math::random() * 2.0 - 1.0) * multiplier;
+
+            // 4. シンプルな1次ローパスフィルター（高域を削って温かみを出す）
+            // 係数(0.2)を小さくするほど、よりこもった音（Dampが強い音）になります
+            last_out = last_out + 0.2 * (white_noise - last_out);
+
+            channel_data[j as usize] = last_out as f32;
+        }
+
+        impulse.copy_to_channel(&mut channel_data, i as i32)?;
+    }
+
+    let convolver = audio_ctx.create_convolver()?;
+    convolver.set_buffer(Some(&impulse));
+    Ok(convolver)
 }
 
 #[wasm_bindgen]
@@ -492,8 +624,16 @@ impl MidiPlayer {
         let comp = audio_context.create_dynamics_compressor()?;
         comp.connect_with_audio_node(&master_volume)?;
 
+        let reverb = create_rich_synthesized_reverb(&audio_context, None, None, None)?;
+        reverb.connect_with_audio_node(&comp)?;
+
+        let chorus = ChorusNode::new(&audio_context, None, None, None, None, None)?;
+        chorus.connect_with_audio_node(&comp)?;
+
         Ok(MidiPlayer {
             audio_context: audio_context,
+            reverb: reverb,
+            chorus: chorus,
             comp: comp,
             master_volume: master_volume,
             bars: Vec::new(),
@@ -654,6 +794,8 @@ impl MidiPlayer {
                 self.sound_sources.push(SoundSource::new(
                     &self.audio_context,
                     &self.comp,
+                    &self.reverb,
+                    self.chorus.input(),
                     note.key(),
                     note.velocity(),
                     note.channel_volumes(),
