@@ -284,18 +284,32 @@ impl SoundSource {
         }
 
         current_time += adsr.attack;
-        vca_gain.exponential_ramp_to_value_at_time(vel_ratio as f32, current_time)?;
+        vca_gain.exponential_ramp_to_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
 
         if adsr.hold > 0.0 {
             current_time += adsr.hold;
-            vca_gain.set_value_at_time(vel_ratio as f32, current_time)?;
+            vca_gain.set_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
         }
 
         current_time += adsr.decay;
         let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
-        vca_gain.exponential_ramp_to_value_at_time(vca_sus as f32, current_time)?;
         if end_time > current_time {
-            vca_gain.exponential_ramp_to_value_at_time(vca_sus as f32, end_time)?;
+            vca_gain
+                .exponential_ramp_to_value_at_time((vca_sus as f32).max(0.0001), current_time)?;
+            vca_gain.exponential_ramp_to_value_at_time((vca_sus as f32).max(0.0001), end_time)?;
+        } else {
+            // end_time が current_time より小さい場合は、end_timeまでのターゲットボリュームを計算して反映する
+            // Web Audio APIの exponential_ramp_to_value と同じ計算式を使用する
+            // V(t) = V0 * (V1 / V0) ^ ((t - T0) / (T1 - T0))
+            let t0 = current_time - adsr.decay;
+            let v0 = (vel_ratio as f64).max(0.0001);
+            let target_volume = if adsr.decay > 0.0 && end_time > t0 {
+                v0 * (vca_sus / v0).powf((end_time - t0) / adsr.decay)
+            } else {
+                v0 // AttackやHoldフェーズの途中で離鍵された場合はピーク音量(v0)とする
+            };
+            vca_gain
+                .exponential_ramp_to_value_at_time((target_volume as f32).max(0.0001), end_time)?;
         }
         vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
 
