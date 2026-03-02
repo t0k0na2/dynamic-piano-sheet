@@ -455,7 +455,9 @@ impl SoundSource {
         } else {
             vca.connect_with_audio_node(&ch_vol_node)?;
         }
-        ch_vol_node.connect_with_audio_node(chorus_send)?;
+        ch_vol_node.connect_with_audio_node(dry_send)?;
+        //ch_vol_node.connect_with_audio_node(reverb_send)?;
+        //ch_vol_node.connect_with_audio_node(chorus_send)?;
 
         // Play
         // AudioBufferを切り出しているのでオフセットを0にする

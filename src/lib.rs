@@ -471,7 +471,6 @@ pub struct ChorusNode {
     _delay: DelayNode,
     _lfo: OscillatorNode,
     _lfo_depth: GainNode,
-    _dry_gain: GainNode,
     _wet_gain: GainNode,
 }
 
@@ -481,19 +480,16 @@ impl ChorusNode {
         rate: Option<f32>,
         depth: Option<f32>,
         delay_time: Option<f64>,
-        dry: Option<f32>,
         wet: Option<f32>,
     ) -> Result<Self, JsValue> {
         let rate = rate.unwrap_or(1.5);
         let depth = depth.unwrap_or(0.002);
         let delay_time = delay_time.unwrap_or(0.02);
-        let dry = dry.unwrap_or(0.7);
-        let wet = wet.unwrap_or(0.7);
+        let wet = wet.unwrap_or(1.0);
 
         let input = audio_ctx.create_gain()?;
         let output = audio_ctx.create_gain()?;
 
-        let dry_gain = audio_ctx.create_gain()?;
         let wet_gain = audio_ctx.create_gain()?;
 
         let delay = audio_ctx.create_delay()?;
@@ -504,11 +500,7 @@ impl ChorusNode {
         lfo.set_type(web_sys::OscillatorType::Sine);
         lfo.frequency().set_value(rate);
         lfo_depth.gain().set_value(depth);
-        dry_gain.gain().set_value(dry);
         wet_gain.gain().set_value(wet);
-
-        input.connect_with_audio_node(&dry_gain)?;
-        dry_gain.connect_with_audio_node(&output)?;
 
         input.connect_with_audio_node(&delay)?;
         delay.connect_with_audio_node(&wet_gain)?;
@@ -524,7 +516,6 @@ impl ChorusNode {
             _delay: delay,
             _lfo: lfo,
             _lfo_depth: lfo_depth,
-            _dry_gain: dry_gain,
             _wet_gain: wet_gain,
         })
     }
@@ -627,7 +618,7 @@ impl MidiPlayer {
         let reverb = create_rich_synthesized_reverb(&audio_context, None, None, None)?;
         reverb.connect_with_audio_node(&comp)?;
 
-        let chorus = ChorusNode::new(&audio_context, None, None, None, None, None)?;
+        let chorus = ChorusNode::new(&audio_context, None, None, None, None)?;
         chorus.connect_with_audio_node(&comp)?;
 
         Ok(MidiPlayer {
