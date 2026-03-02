@@ -1,3 +1,4 @@
+use crate::note::VolumeEvent;
 use crate::soundfont::{GeneratorOperator, SoundFont};
 use wasm_bindgen::prelude::*;
 use web_sys::{AudioNode, BaseAudioContext};
@@ -48,7 +49,7 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
-        channel_volume: u8,
+        channel_volumes: &[VolumeEvent],
         channel: u8,
         program: u8,
         bank: u16,
@@ -62,7 +63,7 @@ impl SoundSource {
                 destination_target,
                 key,
                 velocity,
-                channel_volume,
+                channel_volumes,
                 channel,
                 program,
                 bank,
@@ -85,7 +86,7 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
-        channel_volume: u8,
+        channel_volumes: &[VolumeEvent],
         channel: u8,
         program: u8,
         mut bank: u16,
@@ -125,7 +126,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity) * Self::velocity_to_ratio(channel_volume); // * vol_factor as f64;
+        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -400,11 +401,30 @@ impl SoundSource {
             }
         }
 
-        if let Some(t_vca) = tremolo_vca_node {
-            t_vca.connect_with_audio_node(destination_target)?;
-        } else {
-            vca.connect_with_audio_node(destination_target)?;
+        let ch_vol_node = context.create_gain()?;
+        let init_ch_vol = channel_volumes.first().map(|v| v.volume).unwrap_or(100);
+        ch_vol_node
+            .gain()
+            .set_value(Self::velocity_to_ratio(init_ch_vol) as f32);
+
+        let on_time = channel_volumes.first().map(|v| v.time).unwrap_or(0.0);
+        for event in channel_volumes.iter().skip(1) {
+            let event_time = start_time + (event.time - on_time);
+            if event_time > start_time {
+                ch_vol_node.gain().set_target_at_time(
+                    Self::velocity_to_ratio(event.volume) as f32,
+                    event_time,
+                    0.01,
+                )?;
+            }
         }
+
+        if let Some(t_vca) = tremolo_vca_node {
+            t_vca.connect_with_audio_node(&ch_vol_node)?;
+        } else {
+            vca.connect_with_audio_node(&ch_vol_node)?;
+        }
+        ch_vol_node.connect_with_audio_node(destination_target)?;
 
         // Play
         // AudioBufferを切り出しているのでオフセットを0にする
@@ -430,7 +450,12 @@ impl SoundSource {
 
         let cleanup_time = end_time + adsr.release + 0.2;
 
-        let mut final_nodes = vec![source_node.into(), filter.into(), vca.into()];
+        let mut final_nodes = vec![
+            source_node.into(),
+            filter.into(),
+            vca.into(),
+            ch_vol_node.into(),
+        ];
         final_nodes.extend(lfo_nodes);
 
         Ok(SoundSource {

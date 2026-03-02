@@ -267,7 +267,17 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     32 => track_state.bank_lsb = u8::from(value),
                                     6 => (),  //track_state.data_entry_msb = u8::from(value),
                                     38 => (), //track_state.data_entry_lsb = u8::from(value),
-                                    7 => track_state.volume = u8::from(value),
+                                    7 => {
+                                        let vol = u8::from(value);
+                                        track_state.volume = vol;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id]
+                                                    .add_channel_volume(current_time, vol);
+                                            }
+                                        }
+                                    }
                                     1 => (),   //track_state.modulation = u8::from(value),
                                     10 => (),  //track_state.pan = u8::from(value),
                                     11 => (),  //track_state.expression = u8::from(value),
@@ -582,7 +592,7 @@ impl MidiPlayer {
                     &self.comp,
                     note.key(),
                     note.velocity(),
-                    note.channel_volume(),
+                    note.channel_volumes(),
                     note.track() + 1,
                     note.program(),
                     note.bank(),

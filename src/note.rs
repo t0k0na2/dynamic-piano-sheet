@@ -1,12 +1,18 @@
 use std::fmt;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VolumeEvent {
+    pub time: f64,
+    pub volume: u8,
+}
+
+#[derive(Clone)]
 pub struct Note {
     on_time: f64,
     off_time: f64,
     key: u8,
     velocity: u8,
-    channel_volume: u8,
+    channel_volumes: Vec<VolumeEvent>,
     track: u8,
     program: u8,
     bank: u16,
@@ -28,7 +34,10 @@ impl Note {
             off_time,
             key,
             velocity,
-            channel_volume,
+            channel_volumes: vec![VolumeEvent {
+                time: on_time,
+                volume: channel_volume,
+            }],
             track,
             program,
             bank,
@@ -50,8 +59,12 @@ impl Note {
         self.velocity
     }
 
-    pub fn channel_volume(&self) -> u8 {
-        self.channel_volume
+    pub fn channel_volumes(&self) -> &Vec<VolumeEvent> {
+        &self.channel_volumes
+    }
+
+    pub fn add_channel_volume(&mut self, time: f64, volume: u8) {
+        self.channel_volumes.push(VolumeEvent { time, volume });
     }
 
     pub fn track(&self) -> u8 {
