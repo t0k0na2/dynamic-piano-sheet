@@ -23,6 +23,137 @@ fn calc_sec_per_tick(ticks_per_beat: u16, tempo: f64) -> f64 {
     tempo as f64 * 0.000001 / ticks_per_beat as f64
 }
 
+const MIDI_CC_NAMES: [&str; 128] = [
+    "Bank Select",
+    "Modulation Wheel",
+    "Breath Controller",
+    "Undefined",
+    "Foot Controller",
+    "Portamento Time",
+    "Data Entry (MSB)",
+    "Channel Volume",
+    "Balance",
+    "Undefined",
+    "Pan",
+    "Expression Controller",
+    "Effect Control 1",
+    "Effect Control 2",
+    "Undefined",
+    "Undefined",
+    "General Purpose Controller 1",
+    "General Purpose Controller 2",
+    "General Purpose Controller 3",
+    "General Purpose Controller 4",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Bank Select (LSB)",
+    "Modulation Wheel (LSB)",
+    "Breath Controller (LSB)",
+    "Undefined",
+    "Foot Controller (LSB)",
+    "Portamento Time (LSB)",
+    "Data Entry (LSB)",
+    "Channel Volume (LSB)",
+    "Balance (LSB)",
+    "Undefined",
+    "Pan (LSB)",
+    "Expression Controller (LSB)",
+    "Effect Control 1 (LSB)",
+    "Effect Control 2 (LSB)",
+    "Undefined",
+    "Undefined",
+    "General Purpose Controller 1 (LSB)",
+    "General Purpose Controller 2 (LSB)",
+    "General Purpose Controller 3 (LSB)",
+    "General Purpose Controller 4 (LSB)",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Sustain Pedal",
+    "Portamento On/Off",
+    "Sostenuto Pedal",
+    "Soft Pedal",
+    "Legato Footswitch",
+    "Hold 2 Pedal",
+    "Sound Variation",
+    "Timbre/Harmonic Content",
+    "Release Time",
+    "Attack Time",
+    "Brightness",
+    "Sound Controller 6",
+    "Sound Controller 7",
+    "Sound Controller 8",
+    "Sound Controller 9",
+    "Sound Controller 10",
+    "General Purpose Controller 5",
+    "General Purpose Controller 6",
+    "General Purpose Controller 7",
+    "General Purpose Controller 8",
+    "Portamento Control",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Effects 1 Depth (Reverb)",
+    "Effects 2 Depth (Tremolo)",
+    "Effects 3 Depth (Chorus)",
+    "Effects 4 Depth (Celeste)",
+    "Effects 5 Depth (Phaser)",
+    "Data Increment",
+    "Data Decrement",
+    "Non-Registered Parameter Number (LSB)",
+    "Non-Registered Parameter Number (MSB)",
+    "Registered Parameter Number (LSB)",
+    "Registered Parameter Number (MSB)",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "Undefined",
+    "All Sound Off",
+    "Reset All Controllers",
+    "Local Control On/Off",
+    "All Notes Off",
+    "Omni Mode Off",
+    "Omni Mode On",
+    "Mono Mode On",
+    "Poly Mode On",
+];
+
 pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
     let smf = match Smf::parse(data) {
         Ok(smf) => smf,
@@ -49,6 +180,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         program: u8,
         bank_msb: u8,
         bank_lsb: u8,
+        volume: u8,
     }
     let mut track_states: Vec<TrackState> = vec![TrackState::default(); smf.tracks.len()];
 
@@ -105,6 +237,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         -1.0,
                                         key.as_int(),
                                         vel.as_int(),
+                                        track_state.volume,
                                         i as u8,
                                         track_state.program,
                                         (track_state.bank_msb as u16), // * 128 + track_state.bank_lsb as u16, SoundFontはmsbのみを使用
@@ -132,10 +265,38 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                 match controller.as_int() {
                                     0 => track_state.bank_msb = u8::from(value),
                                     32 => track_state.bank_lsb = u8::from(value),
-                                    _ => (),
+                                    6 => (),  //track_state.data_entry_msb = u8::from(value),
+                                    38 => (), //track_state.data_entry_lsb = u8::from(value),
+                                    7 => track_state.volume = u8::from(value),
+                                    1 => (),   //track_state.modulation = u8::from(value),
+                                    10 => (),  //track_state.pan = u8::from(value),
+                                    11 => (),  //track_state.expression = u8::from(value),
+                                    91 => (),  //track_state.reverb = u8::from(value),
+                                    93 => (),  //track_state.chorus = u8::from(value),
+                                    100 => (), //track_state.resonance = u8::from(value),
+                                    101 => (), //track_state.release_time = u8::from(value),
+                                    121 => (), //track_state.reset_all_controllers = u8::from(value),
+                                    _ => {
+                                        let cc_name = MIDI_CC_NAMES
+                                            .get(controller.as_int() as usize)
+                                            .unwrap_or(&"Unknown");
+                                        println!(
+                                            "controller: {} ({:?}) {:?}",
+                                            cc_name, controller, value
+                                        );
+                                    }
                                 }
                             }
-                            _ => (),
+                            MidiMessage::PitchBend { bend } => {
+                                println!("pitch bend: {:?}", bend);
+                            }
+                            MidiMessage::Aftertouch { key, vel } => {
+                                //println!("aftertouch: key{:?} vel{:?}", key, vel);
+                            }
+                            MidiMessage::ChannelAftertouch { vel } => {
+                                //println!("channel aftertouch: {:?}", vel);
+                            }
+                            _ => (), //println!("unknown midi message: {:?}", message),
                         }
                     }
                     TrackEventKind::Meta(message) => match message {
@@ -421,6 +582,7 @@ impl MidiPlayer {
                     &self.comp,
                     note.key(),
                     note.velocity(),
+                    note.channel_volume(),
                     note.track() + 1,
                     note.program(),
                     note.bank(),

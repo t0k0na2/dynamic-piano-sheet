@@ -6,6 +6,7 @@ pub struct Note {
     off_time: f64,
     key: u8,
     velocity: u8,
+    channel_volume: u8,
     track: u8,
     program: u8,
     bank: u16,
@@ -17,6 +18,7 @@ impl Note {
         off_time: f64,
         key: u8,
         velocity: u8,
+        channel_volume: u8,
         track: u8,
         program: u8,
         bank: u16,
@@ -26,6 +28,7 @@ impl Note {
             off_time,
             key,
             velocity,
+            channel_volume,
             track,
             program,
             bank,
@@ -45,6 +48,10 @@ impl Note {
     }
     pub fn velocity(&self) -> u8 {
         self.velocity
+    }
+
+    pub fn channel_volume(&self) -> u8 {
+        self.channel_volume
     }
 
     pub fn track(&self) -> u8 {

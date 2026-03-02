@@ -48,6 +48,7 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
+        channel_volume: u8,
         channel: u8,
         program: u8,
         bank: u16,
@@ -61,6 +62,7 @@ impl SoundSource {
                 destination_target,
                 key,
                 velocity,
+                channel_volume,
                 channel,
                 program,
                 bank,
@@ -83,6 +85,7 @@ impl SoundSource {
         destination_target: &AudioNode,
         key: u8,
         velocity: u8,
+        channel_volume: u8,
         channel: u8,
         program: u8,
         mut bank: u16,
@@ -122,7 +125,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
+        let vel_ratio = Self::velocity_to_ratio(velocity) * Self::velocity_to_ratio(channel_volume); // * vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
