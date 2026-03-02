@@ -125,6 +125,8 @@ impl SoundSource {
             vib_lfo,
             scale_tuning,
             _vol_factor,
+            reverb_send_ratio,
+            chorus_send_ratio,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -456,8 +458,22 @@ impl SoundSource {
             vca.connect_with_audio_node(&ch_vol_node)?;
         }
         ch_vol_node.connect_with_audio_node(dry_send)?;
-        //ch_vol_node.connect_with_audio_node(reverb_send)?;
-        //ch_vol_node.connect_with_audio_node(chorus_send)?;
+
+        if reverb_send_ratio > 0.0 {
+            let reverb_gain = context.create_gain()?;
+            reverb_gain.gain().set_value(reverb_send_ratio);
+            ch_vol_node.connect_with_audio_node(&reverb_gain)?;
+            reverb_gain.connect_with_audio_node(reverb_send)?;
+            lfo_nodes.push(reverb_gain.into());
+        }
+
+        if chorus_send_ratio > 0.0 {
+            let chorus_gain = context.create_gain()?;
+            chorus_gain.gain().set_value(chorus_send_ratio);
+            ch_vol_node.connect_with_audio_node(&chorus_gain)?;
+            chorus_gain.connect_with_audio_node(chorus_send)?;
+            lfo_nodes.push(chorus_gain.into());
+        }
 
         // Play
         // AudioBufferを切り出しているのでオフセットを0にする
@@ -518,6 +534,8 @@ impl SoundSource {
         f32,
         LfoParams,
         LfoParams,
+        f32,
+        f32,
         f32,
         f32,
     )> {
@@ -900,6 +918,15 @@ impl SoundSource {
                                         let vol_factor =
                                             10.0_f32.powf(-(initial_attenuation as f32) / 200.0);
 
+                                        let chorus_effects_send =
+                                            get_gen(GeneratorOperator::ChorusEffectsSend, 0);
+                                        let reverb_effects_send =
+                                            get_gen(GeneratorOperator::ReverbEffectsSend, 0);
+                                        let chorus_send_ratio =
+                                            (chorus_effects_send as f32 / 1000.0).clamp(0.0, 1.0);
+                                        let reverb_send_ratio =
+                                            (reverb_effects_send as f32 / 1000.0).clamp(0.0, 1.0);
+
                                         return Some((
                                             sid,
                                             calculated_overriding_root_key,
@@ -915,6 +942,8 @@ impl SoundSource {
                                             vib_lfo,
                                             scale_tuning,
                                             vol_factor,
+                                            reverb_send_ratio,
+                                            chorus_send_ratio,
                                         ));
                                     }
                                 }
@@ -987,7 +1016,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -1018,7 +1047,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
