@@ -181,7 +181,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         bank_msb: u8,
         bank_lsb: u8,
         volume: u8,
-        pitch_bend: u16,
+        pitch_bend: i16,
         rpn_lsb: u8,
         rpn_msb: u8,
         data_entry_lsb: u8,
@@ -199,7 +199,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                 bank_msb: 0,
                 bank_lsb: 0,
                 volume: 0,
-                pitch_bend: 8192,
+                pitch_bend: 0,
                 rpn_lsb: 127,
                 rpn_msb: 127,
                 data_entry_lsb: 0,
@@ -339,7 +339,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.bank_msb = 0;
                                         track_state.bank_lsb = 0;
                                         track_state.volume = 100;
-                                        track_state.pitch_bend = 8192;
+                                        track_state.pitch_bend = 0;
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                         track_state.pitch_bend_sensitivity = 2.0;
@@ -356,7 +356,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                 }
                             }
                             MidiMessage::PitchBend { bend } => {
-                                let bend_val = bend.as_int() as u16;
+                                let bend_val = bend.as_int() as i16;
                                 track_state.pitch_bend = bend_val;
                                 let ch_id = channel.as_int();
                                 for (&(ch, _), &note_id) in playing_notes.iter() {

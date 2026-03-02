@@ -9,7 +9,7 @@ pub struct VolumeEvent {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PitchBendEvent {
     pub time: f64,
-    pub bend: u16,
+    pub bend: i16,
 }
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ impl Note {
         key: u8,
         velocity: u8,
         channel_volume: u8,
-        pitch_bend: u16,
+        pitch_bend: i16,
         pitch_bend_sensitivity: f32,
         track: u8,
         program: u8,
@@ -86,7 +86,7 @@ impl Note {
         &self.pitch_bends
     }
 
-    pub fn add_pitch_bend(&mut self, time: f64, bend: u16) {
+    pub fn add_pitch_bend(&mut self, time: f64, bend: i16) {
         self.pitch_bends.push(PitchBendEvent { time, bend });
     }
 

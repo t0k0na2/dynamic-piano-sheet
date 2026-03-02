@@ -214,15 +214,15 @@ impl SoundSource {
 
         // --- Pitch Bend 処理 ---
         let pb_range_semitones = pitch_bend_sensitivity; // RPN から取得した値を使用
-        let calc_pb_rate = |bend: u16| -> f32 {
-            let bend_norm = (bend as f32 - 8192.0) / 8192.0;
+        let calc_pb_rate = |bend: i16| -> f32 {
+            let bend_norm = bend as f32 / 8192.0;
             let bend_semitones = bend_norm * pb_range_semitones;
             let bend_rate = 2.0_f32.powf(bend_semitones / 12.0);
             playback_rate * bend_rate
         };
 
         let pb_param = source_node.playback_rate();
-        let init_pb = pitch_bends.first().map(|v| v.bend).unwrap_or(8192);
+        let init_pb = pitch_bends.first().map(|v| v.bend).unwrap_or(0);
 
         // 常にset_value_at_timeで初期ピッチを設定する
         pb_param.set_value_at_time(calc_pb_rate(init_pb), start_time)?;
