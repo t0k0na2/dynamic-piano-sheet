@@ -133,7 +133,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
+        let vel_ratio = Self::velocity_to_ratio(velocity); // * _vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -192,12 +192,8 @@ impl SoundSource {
 
             if safe_len > 0 {
                 let buffer = context.create_buffer(1, safe_len as u32, sample_rate)?;
-                let mut f32_data = vec![0.0f32; safe_len];
                 let src_data = &soundfont.sample_data[safe_start..safe_end];
-                for (i, &sample) in src_data.iter().enumerate() {
-                    f32_data[i] = sample as f32 / 32768.0;
-                }
-                buffer.copy_to_channel(&mut f32_data, 0)?;
+                buffer.copy_to_channel(&src_data, 0)?;
                 Some(buffer)
             } else {
                 None

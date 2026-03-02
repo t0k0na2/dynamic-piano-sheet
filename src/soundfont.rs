@@ -308,8 +308,8 @@ pub struct SoundFont {
     pub instrument_generators: Vec<Generator>,
     pub sample_headers: Vec<SampleHeader>,
 
-    /// 16-bit PCM波形データ ("smpl" チャンク内のデータ)
-    pub sample_data: Vec<i16>,
+    /// f32に正規化された波形データ ("smpl" チャンク内のデータ)
+    pub sample_data: Vec<f32>,
 }
 
 // ---------------------------------------------------------
@@ -439,7 +439,8 @@ impl SoundFont {
                             let sample_count = chunk_size as usize / 2;
                             sf.sample_data = Vec::with_capacity(sample_count);
                             for _ in 0..sample_count {
-                                sf.sample_data.push(read_i16(data, &mut offset)?);
+                                let sample = read_i16(data, &mut offset)?;
+                                sf.sample_data.push(sample as f32 / 32768.0);
                             }
                         } else {
                             offset += chunk_size as usize;
