@@ -6,6 +6,12 @@ pub struct VolumeEvent {
     pub volume: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PitchBendEvent {
+    pub time: f64,
+    pub bend: u16,
+}
+
 #[derive(Clone)]
 pub struct Note {
     on_time: f64,
@@ -13,6 +19,8 @@ pub struct Note {
     key: u8,
     velocity: u8,
     channel_volumes: Vec<VolumeEvent>,
+    pitch_bends: Vec<PitchBendEvent>,
+    pitch_bend_sensitivity: f32,
     track: u8,
     program: u8,
     bank: u16,
@@ -25,6 +33,8 @@ impl Note {
         key: u8,
         velocity: u8,
         channel_volume: u8,
+        pitch_bend: u16,
+        pitch_bend_sensitivity: f32,
         track: u8,
         program: u8,
         bank: u16,
@@ -38,6 +48,11 @@ impl Note {
                 time: on_time,
                 volume: channel_volume,
             }],
+            pitch_bends: vec![PitchBendEvent {
+                time: on_time,
+                bend: pitch_bend,
+            }],
+            pitch_bend_sensitivity,
             track,
             program,
             bank,
@@ -65,6 +80,18 @@ impl Note {
 
     pub fn add_channel_volume(&mut self, time: f64, volume: u8) {
         self.channel_volumes.push(VolumeEvent { time, volume });
+    }
+
+    pub fn pitch_bends(&self) -> &Vec<PitchBendEvent> {
+        &self.pitch_bends
+    }
+
+    pub fn add_pitch_bend(&mut self, time: f64, bend: u16) {
+        self.pitch_bends.push(PitchBendEvent { time, bend });
+    }
+
+    pub fn pitch_bend_sensitivity(&self) -> f32 {
+        self.pitch_bend_sensitivity
     }
 
     pub fn track(&self) -> u8 {

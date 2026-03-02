@@ -1,3 +1,4 @@
+use crate::note::PitchBendEvent;
 use crate::note::VolumeEvent;
 use crate::soundfont::{GeneratorOperator, SoundFont};
 use wasm_bindgen::prelude::*;
@@ -50,6 +51,8 @@ impl SoundSource {
         key: u8,
         velocity: u8,
         channel_volumes: &[VolumeEvent],
+        pitch_bends: &[PitchBendEvent],
+        pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
         bank: u16,
@@ -64,6 +67,8 @@ impl SoundSource {
                 key,
                 velocity,
                 channel_volumes,
+                pitch_bends,
+                pitch_bend_sensitivity,
                 channel,
                 program,
                 bank,
@@ -87,6 +92,8 @@ impl SoundSource {
         key: u8,
         velocity: u8,
         channel_volumes: &[VolumeEvent],
+        pitch_bends: &[PitchBendEvent],
+        pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
         mut bank: u16,
@@ -111,7 +118,7 @@ impl SoundSource {
             mod_lfo,
             vib_lfo,
             scale_tuning,
-            vol_factor,
+            _vol_factor,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -204,7 +211,29 @@ impl SoundSource {
         if let Some(buf) = &audio_buffer {
             source_node.set_buffer(Some(buf));
         }
-        source_node.playback_rate().set_value(playback_rate);
+
+        // --- Pitch Bend 処理 ---
+        let pb_range_semitones = pitch_bend_sensitivity; // RPN から取得した値を使用
+        let calc_pb_rate = |bend: u16| -> f32 {
+            let bend_norm = (bend as f32 - 8192.0) / 8192.0;
+            let bend_semitones = bend_norm * pb_range_semitones;
+            let bend_rate = 2.0_f32.powf(bend_semitones / 12.0);
+            playback_rate * bend_rate
+        };
+
+        let pb_param = source_node.playback_rate();
+        let init_pb = pitch_bends.first().map(|v| v.bend).unwrap_or(8192);
+
+        // 常にset_value_at_timeで初期ピッチを設定する
+        pb_param.set_value_at_time(calc_pb_rate(init_pb), start_time)?;
+
+        let pb_on_time = pitch_bends.first().map(|v| v.time).unwrap_or(0.0);
+        for event in pitch_bends.iter().skip(1) {
+            let event_time = start_time + (event.time - pb_on_time);
+            if event_time > start_time {
+                pb_param.set_target_at_time(calc_pb_rate(event.bend), event_time, 0.01)?;
+            }
+        }
 
         // -- LFO Setup --
         let mut lfo_nodes = vec![];
