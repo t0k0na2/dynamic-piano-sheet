@@ -43,6 +43,9 @@ pub struct SoundSource {
     nodes: Vec<AudioNode>,
     now_time: f64,
     end_time: f64,
+    exclusive_class: u16,
+    channel: u8,
+    vca_gain: Option<web_sys::AudioParam>,
 }
 
 impl SoundSource {
@@ -97,6 +100,9 @@ impl SoundSource {
                 nodes: vec![],
                 now_time: start_time,
                 end_time: start_time,
+                exclusive_class: 0,
+                channel,
+                vca_gain: None,
             })
         }
     }
@@ -144,6 +150,7 @@ impl SoundSource {
             reverb_send_ratio,
             chorus_send_ratio,
             pan_value,
+            exclusive_class,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -153,6 +160,9 @@ impl SoundSource {
                     nodes: vec![],
                     now_time: start_time,
                     end_time: start_time,
+                    exclusive_class: 0,
+                    channel,
+                    vca_gain: None,
                 });
             }
         };
@@ -623,6 +633,7 @@ impl SoundSource {
         }
 
         let cleanup_time = end_time + adsr.release + 0.2;
+        let vca_gain_param = vca.gain();
 
         let mut final_nodes = vec![
             source_node.into(),
@@ -638,6 +649,9 @@ impl SoundSource {
             nodes: final_nodes,
             now_time: start_time,
             end_time: cleanup_time,
+            exclusive_class,
+            channel,
+            vca_gain: Some(vca_gain_param),
         })
     }
 
@@ -665,6 +679,7 @@ impl SoundSource {
         f32,
         f32,
         f32,
+        u16,
     )> {
         // 1. 該当のプリセットを検索
         let preset_idx = soundfont
@@ -1057,6 +1072,9 @@ impl SoundSource {
                                         let pan = get_gen(GeneratorOperator::Pan, 0);
                                         let pan_value = (pan as f32 / 500.0).clamp(-1.0, 1.0);
 
+                                        let exclusive_class =
+                                            get_gen(GeneratorOperator::ExclusiveClass, 0) as u16;
+
                                         return Some((
                                             sid,
                                             calculated_overriding_root_key,
@@ -1075,6 +1093,7 @@ impl SoundSource {
                                             reverb_send_ratio,
                                             chorus_send_ratio,
                                             pan_value,
+                                            exclusive_class,
                                         ));
                                     }
                                 }
@@ -1098,6 +1117,35 @@ impl SoundSource {
 
     pub fn finished(&self) -> bool {
         self.now_time >= self.end_time
+    }
+
+    pub fn cut_off(&mut self, time: f64) {
+        if let Some(gain) = &self.vca_gain {
+            let fade_time = 0.05; // 50ms fade out to avoid clicks
+            // Start fading out from current value
+            let _ = gain.cancel_scheduled_values(time);
+
+            // Try to get current value using setTargetAtTime,
+            // or we could use exponentialRampToValueAtTime if we knew the current volume.
+            // Since we can't reliably get the current parameter value synchronously,
+            // a setTargetAtTime approach toward 0 with a small time constant is robust.
+            let _ = gain.set_target_at_time(0.0001, time, fade_time / 3.0);
+
+            // Also schedule an absolute 0 later just to be sure
+            let _ = gain.set_value_at_time(0.0000, time + fade_time);
+
+            self.end_time = time + fade_time;
+        } else {
+            self.end_time = time;
+        }
+    }
+
+    pub fn channel(&self) -> u8 {
+        self.channel
+    }
+
+    pub fn exclusive_class(&self) -> u16 {
+        self.exclusive_class
     }
 
     fn midi_key_to_freq(key: u8) -> f64 {
@@ -1147,7 +1195,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -1178,7 +1226,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }

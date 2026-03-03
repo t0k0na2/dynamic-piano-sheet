@@ -975,7 +975,7 @@ impl MidiPlayer {
                 let start_time =
                     self.audio_context.current_time() + (note.on_time() - self.current_time);
                 let end_time = start_time + (note.off_time() - note.on_time());
-                self.sound_sources.push(SoundSource::new(
+                let new_source = SoundSource::new(
                     &self.audio_context,
                     &self.master_volume,
                     &self.reverb,
@@ -996,7 +996,22 @@ impl MidiPlayer {
                     start_time,
                     end_time,
                     self.soundfont.as_ref(),
-                )?);
+                )?;
+
+                if new_source.exclusive_class() > 0 {
+                    let ec = new_source.exclusive_class();
+                    let ch = new_source.channel();
+                    for existing_source in self.sound_sources.iter_mut() {
+                        if !existing_source.finished()
+                            && existing_source.channel() == ch
+                            && existing_source.exclusive_class() == ec
+                        {
+                            existing_source.cut_off(start_time);
+                        }
+                    }
+                }
+
+                self.sound_sources.push(new_source);
             }
         }
 
