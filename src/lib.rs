@@ -260,8 +260,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         }
     };
 
-    if smf.header.format != Format::Parallel {
-        return Err(format!("Parallelだけサポート").into());
+    if smf.header.format == Format::Sequential {
+        return Err(format!("Sequentialは未サポート").into());
     }
 
     let ticks_per_beat = match smf.header.timing {
@@ -269,11 +269,15 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         Timing::Metrical(res) => res.as_int(),
     };
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Default)]
     struct TrackState {
         interval_ticks: u32,
         currrent_index: usize,
         ended: bool,
+    }
+
+    #[derive(Clone, Copy)]
+    struct ChannelState {
         program: u8,
         bank_msb: u8,
         bank_lsb: u8,
@@ -291,12 +295,9 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         pitch_bend_sensitivity: f32,
     }
 
-    impl Default for TrackState {
+    impl Default for ChannelState {
         fn default() -> Self {
             Self {
-                interval_ticks: 0,
-                currrent_index: 0,
-                ended: false,
                 program: 0,
                 bank_msb: 0,
                 bank_lsb: 0,
@@ -316,6 +317,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         }
     }
     let mut track_states: Vec<TrackState> = vec![TrackState::default(); smf.tracks.len()];
+    let mut channel_states: [ChannelState; 16] = [ChannelState::default(); 16];
 
     for (i, track) in smf.tracks.iter().enumerate() {
         if track.is_empty() {
@@ -360,6 +362,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
 
                 match track[track_state.currrent_index].kind {
                     TrackEventKind::Midi { channel, message } => {
+                        let ch_idx = channel.as_int() as usize;
+                        let channel_state = &mut channel_states[ch_idx];
                         match message {
                             MidiMessage::NoteOn { key, vel } => {
                                 let hash_key = (channel.as_int(), key.as_int());
@@ -370,18 +374,18 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         -1.0,
                                         key.as_int(),
                                         vel.as_int(),
-                                        track_state.volume,
-                                        track_state.pitch_bend,
-                                        track_state.pan,
-                                        track_state.reverb,
-                                        track_state.chorus,
-                                        track_state.modulation,
-                                        track_state.expression,
-                                        track_state.pitch_bend_sensitivity,
+                                        channel_state.volume,
+                                        channel_state.pitch_bend,
+                                        channel_state.pan,
+                                        channel_state.reverb,
+                                        channel_state.chorus,
+                                        channel_state.modulation,
+                                        channel_state.expression,
+                                        channel_state.pitch_bend_sensitivity,
                                         i as u8,
                                         channel.as_int(),
-                                        track_state.program,
-                                        track_state.bank_msb as u16, // SoundFontはmsbのみを使用
+                                        channel_state.program,
+                                        channel_state.bank_msb as u16, // SoundFontはmsbのみを使用
                                     ));
                                     if let Some(id) = playing_notes.insert(hash_key, note_id) {
                                         notes[id].set_off_time(current_time);
@@ -400,35 +404,37 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                 }
                             }
                             MidiMessage::ProgramChange { program } => {
-                                track_state.program = program.as_int();
+                                channel_state.program = program.as_int();
                             }
                             MidiMessage::Controller { controller, value } => {
                                 match controller.as_int() {
                                     midi_cc::BANK_SELECT_MSB => {
-                                        track_state.bank_msb = u8::from(value)
+                                        channel_state.bank_msb = u8::from(value)
                                     }
                                     midi_cc::BANK_SELECT_LSB => {
-                                        track_state.bank_lsb = u8::from(value)
+                                        channel_state.bank_lsb = u8::from(value)
                                     }
                                     midi_cc::DATA_ENTRY_MSB => {
-                                        track_state.data_entry_msb = u8::from(value);
-                                        if track_state.rpn_msb == 0 && track_state.rpn_lsb == 0 {
-                                            track_state.pitch_bend_sensitivity =
-                                                track_state.data_entry_msb as f32
-                                                    + track_state.data_entry_lsb as f32 / 100.0;
+                                        channel_state.data_entry_msb = u8::from(value);
+                                        if channel_state.rpn_msb == 0 && channel_state.rpn_lsb == 0
+                                        {
+                                            channel_state.pitch_bend_sensitivity =
+                                                channel_state.data_entry_msb as f32
+                                                    + channel_state.data_entry_lsb as f32 / 100.0;
                                         }
                                     }
                                     midi_cc::DATA_ENTRY_LSB => {
-                                        track_state.data_entry_lsb = u8::from(value);
-                                        if track_state.rpn_msb == 0 && track_state.rpn_lsb == 0 {
-                                            track_state.pitch_bend_sensitivity =
-                                                track_state.data_entry_msb as f32
-                                                    + track_state.data_entry_lsb as f32 / 100.0;
+                                        channel_state.data_entry_lsb = u8::from(value);
+                                        if channel_state.rpn_msb == 0 && channel_state.rpn_lsb == 0
+                                        {
+                                            channel_state.pitch_bend_sensitivity =
+                                                channel_state.data_entry_msb as f32
+                                                    + channel_state.data_entry_lsb as f32 / 100.0;
                                         }
                                     }
                                     midi_cc::CHANNEL_VOLUME => {
                                         let vol = u8::from(value);
-                                        track_state.volume = vol;
+                                        channel_state.volume = vol;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -439,7 +445,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                     midi_cc::MODULATION => {
                                         let mod_val = u8::from(value);
-                                        track_state.modulation = mod_val;
+                                        channel_state.modulation = mod_val;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -450,7 +456,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                     midi_cc::PAN => {
                                         let pan_val = u8::from(value);
-                                        track_state.pan = pan_val;
+                                        channel_state.pan = pan_val;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -460,7 +466,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                     midi_cc::EXPRESSION => {
                                         let expr_val = u8::from(value);
-                                        track_state.expression = expr_val;
+                                        channel_state.expression = expr_val;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -471,7 +477,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                     midi_cc::REVERB => {
                                         let rv_val = u8::from(value);
-                                        track_state.reverb = rv_val;
+                                        channel_state.reverb = rv_val;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -481,7 +487,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                     midi_cc::CHORUS => {
                                         let ch_val = u8::from(value);
-                                        track_state.chorus = ch_val;
+                                        channel_state.chorus = ch_val;
                                         let ch_id = channel.as_int();
                                         for (&(ch, _), &note_id) in playing_notes.iter() {
                                             if ch == ch_id {
@@ -490,28 +496,28 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         }
                                     }
                                     midi_cc::NRPN_LSB => {
-                                        track_state.rpn_lsb = 127;
-                                        track_state.rpn_msb = 127;
+                                        channel_state.rpn_lsb = 127;
+                                        channel_state.rpn_msb = 127;
                                     }
                                     midi_cc::NRPN_MSB => {
-                                        track_state.rpn_lsb = 127;
-                                        track_state.rpn_msb = 127;
+                                        channel_state.rpn_lsb = 127;
+                                        channel_state.rpn_msb = 127;
                                     }
-                                    midi_cc::RPN_LSB => track_state.rpn_lsb = u8::from(value),
-                                    midi_cc::RPN_MSB => track_state.rpn_msb = u8::from(value),
+                                    midi_cc::RPN_LSB => channel_state.rpn_lsb = u8::from(value),
+                                    midi_cc::RPN_MSB => channel_state.rpn_msb = u8::from(value),
                                     midi_cc::RESET_ALL_CONTROLLERS => {
-                                        track_state.bank_msb = 0;
-                                        track_state.bank_lsb = 0;
-                                        track_state.volume = 100;
-                                        track_state.pitch_bend = 0;
-                                        track_state.pan = 64;
-                                        track_state.reverb = 0;
-                                        track_state.chorus = 0;
-                                        track_state.modulation = 0;
-                                        track_state.expression = 127;
-                                        track_state.rpn_lsb = 127;
-                                        track_state.rpn_msb = 127;
-                                        track_state.pitch_bend_sensitivity = 2.0;
+                                        channel_state.bank_msb = 0;
+                                        channel_state.bank_lsb = 0;
+                                        channel_state.volume = 100;
+                                        channel_state.pitch_bend = 0;
+                                        channel_state.pan = 64;
+                                        channel_state.reverb = 0;
+                                        channel_state.chorus = 0;
+                                        channel_state.modulation = 0;
+                                        channel_state.expression = 127;
+                                        channel_state.rpn_lsb = 127;
+                                        channel_state.rpn_msb = 127;
+                                        channel_state.pitch_bend_sensitivity = 2.0;
                                     }
                                     _ => {
                                         let cc_name = MIDI_CC_NAMES
@@ -528,7 +534,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                             }
                             MidiMessage::PitchBend { bend } => {
                                 let bend_val = bend.as_int() as i16;
-                                track_state.pitch_bend = bend_val;
+                                channel_state.pitch_bend = bend_val;
                                 let ch_id = channel.as_int();
                                 for (&(ch, _), &note_id) in playing_notes.iter() {
                                     if ch == ch_id {
