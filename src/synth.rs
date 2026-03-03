@@ -56,6 +56,8 @@ impl SoundSource {
         channel_volumes: &[VolumeEvent],
         pitch_bends: &[PitchBendEvent],
         pans: &[PanEvent],
+        reverbs: &[crate::note::ReverbEvent],
+        choruses: &[crate::note::ChorusEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -75,6 +77,8 @@ impl SoundSource {
                 channel_volumes,
                 pitch_bends,
                 pans,
+                reverbs,
+                choruses,
                 pitch_bend_sensitivity,
                 channel,
                 program,
@@ -103,6 +107,8 @@ impl SoundSource {
         channel_volumes: &[VolumeEvent],
         pitch_bends: &[PitchBendEvent],
         pans: &[PanEvent],
+        reverbs: &[crate::note::ReverbEvent],
+        choruses: &[crate::note::ChorusEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -128,7 +134,7 @@ impl SoundSource {
             mod_lfo,
             vib_lfo,
             scale_tuning,
-            _vol_factor,
+            vol_factor,
             reverb_send_ratio,
             chorus_send_ratio,
             pan_value,
@@ -146,7 +152,7 @@ impl SoundSource {
         };
 
         let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity); // * vol_factor as f64;
+        let vel_ratio = Self::velocity_to_ratio(velocity) * vol_factor as f64;
 
         // sample_idxが範囲外の場合のフォールバック
         let shdr = if sample_idx < soundfont.sample_headers.len() {
@@ -487,17 +493,61 @@ impl SoundSource {
 
         pan_node.connect_with_audio_node(dry_send)?;
 
-        if reverb_send_ratio > 0.0 {
+        let calc_reverb_value = |note_reverb: u8| -> f32 {
+            let note_reverb_norm = note_reverb as f32 / 127.0;
+            (reverb_send_ratio + note_reverb_norm).clamp(0.0, 1.0)
+        };
+
+        let init_reverb = reverbs.first().map(|v| v.reverb).unwrap_or(0);
+        let has_reverb = reverbs.iter().any(|v| v.reverb > 0) || reverb_send_ratio > 0.0;
+
+        if has_reverb {
             let reverb_gain = context.create_gain()?;
-            reverb_gain.gain().set_value(reverb_send_ratio);
+            let reverb_param = reverb_gain.gain();
+            reverb_param.set_value_at_time(calc_reverb_value(init_reverb), start_time)?;
+
+            let reverb_on_time = reverbs.first().map(|v| v.time).unwrap_or(0.0);
+            for event in reverbs.iter().skip(1) {
+                let event_time = start_time + (event.time - reverb_on_time);
+                if event_time > start_time {
+                    reverb_param.set_target_at_time(
+                        calc_reverb_value(event.reverb),
+                        event_time,
+                        0.01,
+                    )?;
+                }
+            }
+
             pan_node.connect_with_audio_node(&reverb_gain)?;
             reverb_gain.connect_with_audio_node(reverb_send)?;
             lfo_nodes.push(reverb_gain.into());
         }
 
-        if chorus_send_ratio > 0.0 {
+        let calc_chorus_value = |note_chorus: u8| -> f32 {
+            let note_chorus_norm = note_chorus as f32 / 127.0;
+            (chorus_send_ratio + note_chorus_norm).clamp(0.0, 1.0)
+        };
+
+        let init_chorus = choruses.first().map(|v| v.chorus).unwrap_or(0);
+        let has_chorus = choruses.iter().any(|v| v.chorus > 0) || chorus_send_ratio > 0.0;
+
+        if has_chorus {
             let chorus_gain = context.create_gain()?;
-            chorus_gain.gain().set_value(chorus_send_ratio);
+            let chorus_param = chorus_gain.gain();
+            chorus_param.set_value_at_time(calc_chorus_value(init_chorus), start_time)?;
+
+            let chorus_on_time = choruses.first().map(|v| v.time).unwrap_or(0.0);
+            for event in choruses.iter().skip(1) {
+                let event_time = start_time + (event.time - chorus_on_time);
+                if event_time > start_time {
+                    chorus_param.set_target_at_time(
+                        calc_chorus_value(event.chorus),
+                        event_time,
+                        0.01,
+                    )?;
+                }
+            }
+
             pan_node.connect_with_audio_node(&chorus_gain)?;
             chorus_gain.connect_with_audio_node(chorus_send)?;
             lfo_nodes.push(chorus_gain.into());

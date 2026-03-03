@@ -18,6 +18,18 @@ pub struct PanEvent {
     pub pan: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReverbEvent {
+    pub time: f64,
+    pub reverb: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChorusEvent {
+    pub time: f64,
+    pub chorus: u8,
+}
+
 #[derive(Clone)]
 pub struct Note {
     on_time: f64,
@@ -27,6 +39,8 @@ pub struct Note {
     channel_volumes: Vec<VolumeEvent>,
     pitch_bends: Vec<PitchBendEvent>,
     pans: Vec<PanEvent>,
+    reverbs: Vec<ReverbEvent>,
+    choruses: Vec<ChorusEvent>,
     pitch_bend_sensitivity: f32,
     track: u8,
     program: u8,
@@ -42,6 +56,8 @@ impl Note {
         channel_volume: u8,
         pitch_bend: i16,
         pan: u8,
+        reverb: u8,
+        chorus: u8,
         pitch_bend_sensitivity: f32,
         track: u8,
         program: u8,
@@ -61,6 +77,14 @@ impl Note {
                 bend: pitch_bend,
             }],
             pans: vec![PanEvent { time: on_time, pan }],
+            reverbs: vec![ReverbEvent {
+                time: on_time,
+                reverb,
+            }],
+            choruses: vec![ChorusEvent {
+                time: on_time,
+                chorus,
+            }],
             pitch_bend_sensitivity,
             track,
             program,
@@ -105,6 +129,22 @@ impl Note {
 
     pub fn add_pan(&mut self, time: f64, pan: u8) {
         self.pans.push(PanEvent { time, pan });
+    }
+
+    pub fn reverbs(&self) -> &Vec<ReverbEvent> {
+        &self.reverbs
+    }
+
+    pub fn add_reverb(&mut self, time: f64, reverb: u8) {
+        self.reverbs.push(ReverbEvent { time, reverb });
+    }
+
+    pub fn choruses(&self) -> &Vec<ChorusEvent> {
+        &self.choruses
+    }
+
+    pub fn add_chorus(&mut self, time: f64, chorus: u8) {
+        self.choruses.push(ChorusEvent { time, chorus });
     }
 
     pub fn pitch_bend_sensitivity(&self) -> f32 {

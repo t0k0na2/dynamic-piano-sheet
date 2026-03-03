@@ -31,5 +31,6 @@ impl<'a> Drop for Timer<'a> {
 macro_rules! log {
     ( $( $t:tt )* ) => {
         web_sys::console::log_1(&format!( $( $t )* ).into());
+        println!("log: {}", format!( $( $t )* ));
     }
 }

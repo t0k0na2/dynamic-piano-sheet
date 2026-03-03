@@ -280,6 +280,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         volume: u8,
         pitch_bend: i16,
         pan: u8,
+        reverb: u8,
+        chorus: u8,
         rpn_lsb: u8,
         rpn_msb: u8,
         data_entry_lsb: u8,
@@ -299,6 +301,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                 volume: 0,
                 pitch_bend: 0,
                 pan: 64, // Center default
+                reverb: 0,
+                chorus: 0,
                 rpn_lsb: 127,
                 rpn_msb: 127,
                 data_entry_lsb: 0,
@@ -365,6 +369,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.volume,
                                         track_state.pitch_bend,
                                         track_state.pan,
+                                        track_state.reverb,
+                                        track_state.chorus,
                                         track_state.pitch_bend_sensitivity,
                                         i as u8,
                                         track_state.program,
@@ -436,8 +442,26 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         }
                                     }
                                     midi_cc::EXPRESSION => (), //track_state.expression = u8::from(value),
-                                    midi_cc::REVERB => (), //track_state.reverb = u8::from(value),
-                                    midi_cc::CHORUS => (), //track_state.chorus = u8::from(value),
+                                    midi_cc::REVERB => {
+                                        let rv_val = u8::from(value);
+                                        track_state.reverb = rv_val;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id].add_reverb(current_time, rv_val);
+                                            }
+                                        }
+                                    }
+                                    midi_cc::CHORUS => {
+                                        let ch_val = u8::from(value);
+                                        track_state.chorus = ch_val;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id].add_chorus(current_time, ch_val);
+                                            }
+                                        }
+                                    }
                                     midi_cc::NRPN_LSB => {
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
@@ -454,6 +478,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.volume = 100;
                                         track_state.pitch_bend = 0;
                                         track_state.pan = 64;
+                                        track_state.reverb = 0;
+                                        track_state.chorus = 0;
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                         track_state.pitch_bend_sensitivity = 2.0;
@@ -462,10 +488,6 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         let cc_name = MIDI_CC_NAMES
                                             .get(controller.as_int() as usize)
                                             .unwrap_or(&"Unknown");
-                                        println!(
-                                            "controller: {} ({:?}) {:?}",
-                                            cc_name, controller, value
-                                        );
                                         crate::log!(
                                             "controller: {} ({:?}) {:?}",
                                             cc_name,
@@ -485,11 +507,11 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                     }
                                 }
                             }
-                            MidiMessage::Aftertouch { key: _, vel: _ } => {
-                                //println!("aftertouch: key{:?} vel{:?}", key, vel);
+                            MidiMessage::Aftertouch { key, vel } => {
+                                crate::log!("aftertouch: key{:?} vel{:?}", key, vel);
                             }
-                            MidiMessage::ChannelAftertouch { vel: _ } => {
-                                //println!("channel aftertouch: {:?}", vel);
+                            MidiMessage::ChannelAftertouch { vel } => {
+                                crate::log!("channel aftertouch: {:?}", vel);
                             }
                         }
                     }
@@ -510,9 +532,20 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                             } else {
                             }
                         }
-                        _ => (),
+                        _ => {
+                            crate::log!("unsupported meta message: {:?}", message);
+                        }
                     },
-                    _ => (),
+                    _ => {
+                        crate::log!(
+                            "unsupported track event kind: {:?}",
+                            track[track_state.currrent_index].kind
+                        );
+                        crate::log!(
+                            "unsupported track event kind: {:?}",
+                            track[track_state.currrent_index].kind
+                        );
+                    }
                 }
                 track_state.currrent_index += 1;
                 if track_state.currrent_index < track.len() {
@@ -909,6 +942,8 @@ impl MidiPlayer {
                     note.channel_volumes(),
                     note.pitch_bends(),
                     note.pans(),
+                    note.reverbs(),
+                    note.choruses(),
                     note.pitch_bend_sensitivity(),
                     note.track() + 1,
                     note.program(),
