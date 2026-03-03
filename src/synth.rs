@@ -1175,10 +1175,10 @@ mod tests {
 
     #[test]
     fn test_find_percussion_samples() {
-        let sf2_data = std::fs::read("test.sf2");
+        let sf2_data = std::fs::read("GeneralUser-GS.sf2");
         if let Ok(data) = sf2_data {
             use crate::soundfont::SoundFont;
-            let sf = SoundFont::parse(&data).expect("Failed to parse test.sf2");
+            let sf = SoundFont::parse(&data).expect("Failed to parse GeneralUser-GS.sf2");
 
             let bank = 128;
             let program = 16;
@@ -1200,16 +1200,16 @@ mod tests {
                 }
             }
         } else {
-            println!("test.sf2 not found. Skipping percussion test.");
+            println!("GeneralUser-GS.sf2 not found. Skipping percussion test.");
         }
     }
 
     #[test]
     fn test_find_samples() {
-        let sf2_data = std::fs::read("test.sf2");
+        let sf2_data = std::fs::read("GeneralUser-GS.sf2");
         if let Ok(data) = sf2_data {
             use crate::soundfont::SoundFont;
-            let sf = SoundFont::parse(&data).expect("Failed to parse test.sf2");
+            let sf = SoundFont::parse(&data).expect("Failed to parse GeneralUser-GS.sf2");
 
             let bank = 121;
             let program = 1;
@@ -1231,7 +1231,7 @@ mod tests {
                 }
             }
         } else {
-            println!("test.sf2 not found. Skipping percussion test.");
+            println!("GeneralUser-GS.sf2 not found. Skipping percussion test.");
         }
     }
 }

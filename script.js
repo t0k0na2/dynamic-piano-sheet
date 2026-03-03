@@ -206,7 +206,7 @@ init().then((wasm) => {
 
 
 
-  // テスト用にexample.midとtest.sf2を自動読み込み
+  // テスト用にexample.midを自動読み込み
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     // MIDIの読み込み
     fetch('example.mid')
@@ -222,22 +222,22 @@ init().then((wasm) => {
         }
       })
       .catch(err => console.log("Auto-load MIDI skipped:", err));
-
-    // SoundFontの読み込み
-    fetch('test.sf2')
-      .then(response => {
-        if (response.ok) {
-          return response.arrayBuffer();
-        }
-      })
-      .then(buffer => {
-        if (buffer) {
-          midi_player.load_soundfont(new Uint8Array(buffer));
-          console.log("Auto-loaded test.sf2.");
-        }
-      })
-      .catch(err => console.log("Auto-load SoundFont skipped:", err));
   }
+
+  // SoundFontの読み込み
+  fetch('GeneralUser-GS.sf2')
+    .then(response => {
+      if (response.ok) {
+        return response.arrayBuffer();
+      }
+    })
+    .then(buffer => {
+      if (buffer) {
+        midi_player.load_soundfont(new Uint8Array(buffer));
+        console.log("Auto-loaded GeneralUser-GS.sf2.");
+      }
+    })
+    .catch(err => console.log("Auto-load SoundFont skipped:", err));
 
   update_loop_settings();
   renderLoop();

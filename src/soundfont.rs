@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn test_parse_real_sfbk() {
         // テスト用のsf2ファイルを読み込み
-        let data = std::fs::read("test.sf2");
+        let data = std::fs::read("GeneralUser-GS.sf2");
         if let Ok(data) = data {
             let sf = SoundFont::parse(&data);
             assert!(sf.is_ok(), "Failed to parse realistic soundfont file");
@@ -668,7 +668,7 @@ mod tests {
             );
         } else {
             // ファイルが存在しない環境でもCIが通るようにスキップ
-            println!("test.sf2 not found. Skipping real file test.");
+            println!("GeneralUser-GS.sf2 not found. Skipping real file test.");
         }
     }
 }

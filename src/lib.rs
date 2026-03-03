@@ -581,6 +581,14 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                             // 再生には不要な情報なので無視してOK
                             //crate::log!("smpte offset: {:?}", message);
                         }
+                        MetaMessage::Marker(marker) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("marker: {:?}", marker);
+                        }
+                        MetaMessage::Copyright(copyright) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("copyright: {:?}", copyright);
+                        }
                         _ => {
                             crate::log!("unsupported meta message: {:?}", message);
                         }
