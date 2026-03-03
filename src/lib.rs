@@ -14,8 +14,7 @@ use wasm_bindgen::prelude::*;
 
 use midly::{Format, MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 use web_sys::{
-    AudioContext, CanvasRenderingContext2d, ConvolverNode, DelayNode, DynamicsCompressorNode,
-    GainNode, OscillatorNode,
+    AudioContext, CanvasRenderingContext2d, ConvolverNode, DelayNode, GainNode, OscillatorNode,
 };
 
 fn bpm_to_tempo(bpm: f64) -> f64 {
@@ -587,11 +586,11 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                             // 再生には不要な情報なので無視してOK
                             //crate::log!("smpte offset: {:?}", message);
                         }
-                        MetaMessage::Marker(marker) => {
+                        MetaMessage::Marker(_marker) => {
                             // 再生には不要な情報なので無視してOK
                             //crate::log!("marker: {:?}", marker);
                         }
-                        MetaMessage::Copyright(copyright) => {
+                        MetaMessage::Copyright(_copyright) => {
                             // 再生には不要な情報なので無視してOK
                             //crate::log!("copyright: {:?}", copyright);
                         }
@@ -1114,8 +1113,28 @@ impl MidiPlayer {
             }
         }
 
-        const TRACK_FILL_COLORS: [&str; 4] = ["#4682B4", "#E66101", "#009E73", "#7B4173"];
-        const TRACK_STROKE_COLORS: [&str; 4] = ["#266294", "#C64101", "#007E53", "#5B2153"];
+        const TRACK_FILL_COLORS: [&str; 16] = [
+            "#4682B4", // Steel Blue
+            "#E66101", // Orange
+            "#009E73", // Bluish Green
+            "#7B4173", // Purple
+            "#F0E442", // Yellow
+            "#D55E00", // Vermillion
+            "#56B4E9", // Sky Blue
+            "#CC79A7", // Reddish Purple
+            "#0072B2", // Blue
+            "#E69F00", // Orange Yellow
+            "#32CD32", // Lime Green
+            "#FFD700", // Gold
+            "#FF69B4", // Hot Pink
+            "#40E0D0", // Turquoise
+            "#8B4513", // Saddle Brown
+            "#FF4500", // Orange Red
+        ];
+        const TRACK_STROKE_COLORS: [&str; 16] = [
+            "#266294", "#C64101", "#007E53", "#5B2153", "#D0C422", "#B53E00", "#3694C9", "#AC5987",
+            "#005292", "#C67F00", "#12AD12", "#DFB700", "#DF4994", "#20C0B0", "#6B2503", "#DF2500",
+        ];
 
         // ノート描画
         let diplay_notes: Vec<&Note> = self
@@ -1129,13 +1148,13 @@ impl MidiPlayer {
             })
             .collect();
 
-        for track_no in 0..self.num_tracks {
-            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+        for ch_idx in 0..16 {
+            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
             context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
             context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
 
             for note in diplay_notes.iter() {
-                if note.track() != track_no {
+                if note.channel() != ch_idx {
                     continue;
                 }
 
@@ -1186,12 +1205,12 @@ impl MidiPlayer {
         }
 
         // 再生している白鍵
-        for track_no in 0..self.num_tracks {
-            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+        for ch_idx in 0..16 {
+            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
             context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
             context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
             for note in playing_diplay_notes.iter() {
-                if note.track() != track_no {
+                if note.channel() != ch_idx {
                     continue;
                 }
                 match note.key() % 12 {
@@ -1228,12 +1247,12 @@ impl MidiPlayer {
         }
 
         // 再生している黒鍵
-        for track_no in 0..self.num_tracks {
-            let color_index = (track_no as usize % TRACK_FILL_COLORS.len()) as usize;
+        for ch_idx in 0..16 {
+            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
             context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
             context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
             for note in playing_diplay_notes.iter() {
-                if note.track() != track_no {
+                if note.channel() != ch_idx {
                     continue;
                 }
                 match note.key() % 12 {
