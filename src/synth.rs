@@ -127,6 +127,7 @@ impl SoundSource {
             _vol_factor,
             reverb_send_ratio,
             chorus_send_ratio,
+            pan_value,
         ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
             Some(params) => params,
             None => {
@@ -457,12 +458,17 @@ impl SoundSource {
         } else {
             vca.connect_with_audio_node(&ch_vol_node)?;
         }
-        ch_vol_node.connect_with_audio_node(dry_send)?;
+
+        let pan_node = context.create_stereo_panner()?;
+        pan_node.pan().set_value(pan_value);
+        ch_vol_node.connect_with_audio_node(&pan_node)?;
+
+        pan_node.connect_with_audio_node(dry_send)?;
 
         if reverb_send_ratio > 0.0 {
             let reverb_gain = context.create_gain()?;
             reverb_gain.gain().set_value(reverb_send_ratio);
-            ch_vol_node.connect_with_audio_node(&reverb_gain)?;
+            pan_node.connect_with_audio_node(&reverb_gain)?;
             reverb_gain.connect_with_audio_node(reverb_send)?;
             lfo_nodes.push(reverb_gain.into());
         }
@@ -470,7 +476,7 @@ impl SoundSource {
         if chorus_send_ratio > 0.0 {
             let chorus_gain = context.create_gain()?;
             chorus_gain.gain().set_value(chorus_send_ratio);
-            ch_vol_node.connect_with_audio_node(&chorus_gain)?;
+            pan_node.connect_with_audio_node(&chorus_gain)?;
             chorus_gain.connect_with_audio_node(chorus_send)?;
             lfo_nodes.push(chorus_gain.into());
         }
@@ -504,6 +510,7 @@ impl SoundSource {
             filter.into(),
             vca.into(),
             ch_vol_node.into(),
+            pan_node.into(),
         ];
         final_nodes.extend(lfo_nodes);
 
@@ -514,7 +521,6 @@ impl SoundSource {
         })
     }
 
-    // keyとvelocity、program(preset)、bankから一致するsample情報を取得する
     fn find_sample_index(
         soundfont: &SoundFont,
         bank: u16,
@@ -534,6 +540,7 @@ impl SoundSource {
         f32,
         LfoParams,
         LfoParams,
+        f32,
         f32,
         f32,
         f32,
@@ -927,6 +934,9 @@ impl SoundSource {
                                         let reverb_send_ratio =
                                             (reverb_effects_send as f32 / 1000.0).clamp(0.0, 1.0);
 
+                                        let pan = get_gen(GeneratorOperator::Pan, 0);
+                                        let pan_value = (pan as f32 / 500.0).clamp(-1.0, 1.0);
+
                                         return Some((
                                             sid,
                                             calculated_overriding_root_key,
@@ -944,6 +954,7 @@ impl SoundSource {
                                             vol_factor,
                                             reverb_send_ratio,
                                             chorus_send_ratio,
+                                            pan_value,
                                         ));
                                     }
                                 }
@@ -1016,7 +1027,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -1047,7 +1058,7 @@ mod tests {
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }

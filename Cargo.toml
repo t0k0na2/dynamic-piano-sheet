@@ -47,6 +47,7 @@ features = [
     'AudioBufferSourceNode',
     'ConvolverNode',
     'DelayNode',
+    'StereoPannerNode',
 ]
 
 [dev-dependencies]
