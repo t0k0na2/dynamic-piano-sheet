@@ -300,7 +300,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                 program: 0,
                 bank_msb: 0,
                 bank_lsb: 0,
-                volume: 0,
+                volume: 100,
                 pitch_bend: 0,
                 pan: 64, // Center default
                 reverb: 0,
@@ -379,6 +379,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.expression,
                                         track_state.pitch_bend_sensitivity,
                                         i as u8,
+                                        channel.as_int(),
                                         track_state.program,
                                         track_state.bank_msb as u16, // SoundFontはmsbのみを使用
                                     ));
@@ -989,7 +990,7 @@ impl MidiPlayer {
                     note.modulations(),
                     note.expressions(),
                     note.pitch_bend_sensitivity(),
-                    note.track() + 1,
+                    note.channel() + 1,
                     note.program(),
                     note.bank(),
                     start_time,

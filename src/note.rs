@@ -57,6 +57,7 @@ pub struct Note {
     expressions: Vec<ExpressionEvent>,
     pitch_bend_sensitivity: f32,
     track: u8,
+    channel: u8,
     program: u8,
     bank: u16,
 }
@@ -76,6 +77,7 @@ impl Note {
         expression: u8,
         pitch_bend_sensitivity: f32,
         track: u8,
+        channel: u8,
         program: u8,
         bank: u16,
     ) -> Self {
@@ -111,6 +113,7 @@ impl Note {
             }],
             pitch_bend_sensitivity,
             track,
+            channel,
             program,
             bank,
         }
@@ -195,6 +198,10 @@ impl Note {
         self.track
     }
 
+    pub fn channel(&self) -> u8 {
+        self.channel
+    }
+
     pub fn program(&self) -> u8 {
         self.program
     }
@@ -214,11 +221,12 @@ impl fmt::Debug for Note {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Note {{ key: {}, on_time: {}, off_time: {}, track: {}, velocity: {}, program: {}, bank: {}}}",
+            "Note {{ key: {}, on_time: {}, off_time: {}, track: {}, channel: {}, velocity: {}, program: {}, bank: {}}}",
             Self::midi_key_to_note_name(self.key),
             self.on_time,
             self.off_time,
             self.track,
+            self.channel,
             self.velocity,
             self.program,
             self.bank
