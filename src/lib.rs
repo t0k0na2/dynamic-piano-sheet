@@ -1113,7 +1113,7 @@ impl MidiPlayer {
             }
         }
 
-        const TRACK_FILL_COLORS: [&str; 16] = [
+        const CHANNEL_FILL_COLORS: [&str; 16] = [
             "#4682B4", // Steel Blue
             "#E66101", // Orange
             "#009E73", // Bluish Green
@@ -1131,7 +1131,7 @@ impl MidiPlayer {
             "#8B4513", // Saddle Brown
             "#FF4500", // Orange Red
         ];
-        const TRACK_STROKE_COLORS: [&str; 16] = [
+        const CHANNEL_STROKE_COLORS: [&str; 16] = [
             "#266294", "#C64101", "#007E53", "#5B2153", "#D0C422", "#B53E00", "#3694C9", "#AC5987",
             "#005292", "#C67F00", "#12AD12", "#DFB700", "#DF4994", "#20C0B0", "#6B2503", "#DF2500",
         ];
@@ -1149,9 +1149,9 @@ impl MidiPlayer {
             .collect();
 
         for ch_idx in 0..16 {
-            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
-            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
-            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+            let color_index = (ch_idx as usize % CHANNEL_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(CHANNEL_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(CHANNEL_FILL_COLORS[color_index]);
 
             for note in diplay_notes.iter() {
                 if note.channel() != ch_idx {
@@ -1206,9 +1206,9 @@ impl MidiPlayer {
 
         // 再生している白鍵
         for ch_idx in 0..16 {
-            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
-            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
-            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+            let color_index = (ch_idx as usize % CHANNEL_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(CHANNEL_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(CHANNEL_FILL_COLORS[color_index]);
             for note in playing_diplay_notes.iter() {
                 if note.channel() != ch_idx {
                     continue;
@@ -1248,9 +1248,9 @@ impl MidiPlayer {
 
         // 再生している黒鍵
         for ch_idx in 0..16 {
-            let color_index = (ch_idx as usize % TRACK_FILL_COLORS.len()) as usize;
-            context.set_stroke_style_str(TRACK_STROKE_COLORS[color_index]);
-            context.set_fill_style_str(TRACK_FILL_COLORS[color_index]);
+            let color_index = (ch_idx as usize % CHANNEL_FILL_COLORS.len()) as usize;
+            context.set_stroke_style_str(CHANNEL_STROKE_COLORS[color_index]);
+            context.set_fill_style_str(CHANNEL_FILL_COLORS[color_index]);
             for note in playing_diplay_notes.iter() {
                 if note.channel() != ch_idx {
                     continue;
