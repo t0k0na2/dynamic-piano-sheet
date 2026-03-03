@@ -467,8 +467,6 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                                     .add_expression(current_time, expr_val);
                                             }
                                         }
-
-                                        crate::log!("Expression: {}", expr_val);
                                     }
                                     midi_cc::REVERB => {
                                         let rv_val = u8::from(value);
@@ -561,6 +559,26 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                 remain_bar_ticks = ticks_per_bar;
                             } else {
                             }
+                        }
+                        MetaMessage::DeviceName(_name) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("device name: {:?}", name);
+                        }
+                        MetaMessage::TrackName(_name) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("track name: {:?}", name);
+                        }
+                        MetaMessage::KeySignature(_sf, _mi) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("key signature: {:?}", message);
+                        }
+                        MetaMessage::MidiPort(_port) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("midi port: {:?}", message);
+                        }
+                        MetaMessage::SmpteOffset(_smpte_offset) => {
+                            // 再生には不要な情報なので無視してOK
+                            //crate::log!("smpte offset: {:?}", message);
                         }
                         _ => {
                             crate::log!("unsupported meta message: {:?}", message);
