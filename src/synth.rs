@@ -45,7 +45,53 @@ pub struct SoundSource {
     end_time: f64,
     exclusive_class: u16,
     channel: u8,
-    vca_gain: Option<web_sys::AudioParam>,
+    vca_gains: Vec<web_sys::AudioParam>,
+}
+
+pub(crate) struct ZoneParams {
+    pub sample_id: usize,
+    pub overriding_root_key: Option<u8>,
+    pub adsr: Adsr,
+    pub mod_env: ModEnvParams,
+    pub initial_filter_fc: f32,
+    pub initial_filter_q: f32,
+    pub sample_modes: u16,
+    pub sample_offsets: SampleOffsets,
+    pub coarse_tune: f32,
+    pub fine_tune: f32,
+    pub mod_lfo: LfoParams,
+    pub vib_lfo: LfoParams,
+    pub scale_tuning: f32,
+    pub vol_factor: f32,
+    pub reverb_send_ratio: f32,
+    pub chorus_send_ratio: f32,
+    pub pan_value: f32,
+    pub exclusive_class: u16,
+}
+
+impl Clone for ZoneParams {
+    fn clone(&self) -> Self {
+        Self {
+            sample_id: self.sample_id,
+            overriding_root_key: self.overriding_root_key,
+            adsr: self.adsr.clone(),
+            mod_env: self.mod_env.clone(),
+            initial_filter_fc: self.initial_filter_fc,
+            initial_filter_q: self.initial_filter_q,
+            sample_modes: self.sample_modes,
+            sample_offsets: self.sample_offsets.clone(),
+            coarse_tune: self.coarse_tune,
+            fine_tune: self.fine_tune,
+            mod_lfo: self.mod_lfo.clone(),
+            vib_lfo: self.vib_lfo.clone(),
+            scale_tuning: self.scale_tuning,
+            vol_factor: self.vol_factor,
+            reverb_send_ratio: self.reverb_send_ratio,
+            chorus_send_ratio: self.chorus_send_ratio,
+            pan_value: self.pan_value,
+            exclusive_class: self.exclusive_class,
+        }
+    }
 }
 
 impl SoundSource {
@@ -102,7 +148,7 @@ impl SoundSource {
                 end_time: start_time,
                 exclusive_class: 0,
                 channel,
-                vca_gain: None,
+                vca_gains: vec![],
             })
         }
     }
@@ -132,526 +178,541 @@ impl SoundSource {
         // MIDI channel 10 はパーカッション用のため、Bankを128に強制する
         bank = if channel == 10 { 128 } else { bank };
         // 使用するサンプルのインデックスを探す
-        let (
-            sample_idx,
-            overriding_root_key,
-            adsr,
-            mod_env,
-            filter_fc,
-            filter_q,
-            sample_modes,
-            sample_offsets,
-            coarse_tune,
-            fine_tune,
-            mod_lfo,
-            vib_lfo,
-            scale_tuning,
-            vol_factor,
-            reverb_send_ratio,
-            chorus_send_ratio,
-            pan_value,
-            exclusive_class,
-        ) = match Self::find_sample_index(soundfont, bank, program, key, velocity) {
-            Some(params) => params,
-            None => {
-                // サンプルが見つからない場合は無音のSoundSourceを返す
-                crate::log!("Sample not found for key: {}", key);
-                return Ok(SoundSource {
-                    nodes: vec![],
-                    now_time: start_time,
-                    end_time: start_time,
-                    exclusive_class: 0,
-                    channel,
-                    vca_gain: None,
-                });
-            }
-        };
-
-        let _freq = Self::midi_key_to_freq(key);
-        let vel_ratio = Self::velocity_to_ratio(velocity) * vol_factor as f64;
-
-        // sample_idxが範囲外の場合のフォールバック
-        let shdr = if sample_idx < soundfont.sample_headers.len() {
-            Some(&soundfont.sample_headers[sample_idx])
-        } else if !soundfont.sample_headers.is_empty() {
-            Some(&soundfont.sample_headers[0])
-        } else {
-            None
-        };
-
-        let sample_rate = if let Some(h) = shdr {
-            h.sample_rate as f32
-        } else {
-            44100.0
-        };
-
-        let mut original_pitch = if let Some(h) = shdr {
-            h.original_pitch as f32
-        } else {
-            60.0
-        };
-
-        let pitch_correction = if let Some(h) = shdr {
-            h.pitch_correction as f32
-        } else {
-            0.0
-        };
-
-        // overridingRootKey が指定されている場合は優先
-        if let Some(root_key) = overriding_root_key {
-            // SF2の仕様では0~127が有効とされている
-            if root_key <= 127 {
-                original_pitch = root_key as f32;
-            }
+        let zones = Self::find_sample_index(soundfont, bank, program, key, velocity);
+        if zones.is_empty() {
+            crate::log!("Sample not found for key: {}", key);
+            return Ok(SoundSource {
+                nodes: vec![],
+                now_time: start_time,
+                end_time: start_time,
+                exclusive_class: 0,
+                channel,
+                vca_gains: vec![],
+            });
         }
 
-        let key_pitch = key as f32;
-        // ピッチの計算
-        // Scale Tuning が指定されていれば、それがピッチのスケーリングに使われる（デフォルト 100% = 1.0）
-        // パーカッション(Channel 10)などで Scale Tuning が0の場合はキーによるピッチ変化がおきない
-        let scale_tuning_ratio = scale_tuning / 100.0;
-        let exponent = ((key_pitch - original_pitch) * scale_tuning_ratio + coarse_tune as f32)
-            / 12.0
-            + (pitch_correction + fine_tune as f32) / 1200.0;
-        let playback_rate = 2.0_f32.powf(exponent);
+        let exclusive_class = zones[0].exclusive_class;
+        let mut all_final_nodes = vec![];
+        let mut all_vca_gains = vec![];
+        let mut max_cleanup_time = start_time;
 
-        // 動的にAudioBufferを生成する
-        let audio_buffer = if let Some(h) = shdr {
-            let start_idx = (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
-            let end_idx = (h.end as i64 + sample_offsets.end as i64).max(0) as usize;
+        for zone in zones {
+            let sample_idx = zone.sample_id;
+            let overriding_root_key = zone.overriding_root_key;
+            let adsr = zone.adsr;
+            let mod_env = zone.mod_env;
+            let filter_fc = zone.initial_filter_fc;
+            let filter_q = zone.initial_filter_q;
+            let sample_modes = zone.sample_modes;
+            let sample_offsets = zone.sample_offsets;
+            let coarse_tune = zone.coarse_tune;
+            let fine_tune = zone.fine_tune;
+            let mod_lfo = zone.mod_lfo;
+            let vib_lfo = zone.vib_lfo;
+            let scale_tuning = zone.scale_tuning;
+            let vol_factor = zone.vol_factor;
+            let reverb_send_ratio = zone.reverb_send_ratio;
+            let chorus_send_ratio = zone.chorus_send_ratio;
+            let pan_value = zone.pan_value;
 
-            // 安全のためデータサイズの範囲内にする
-            let safe_start = start_idx.min(soundfont.sample_data.len());
-            let safe_end = end_idx.min(soundfont.sample_data.len()).max(safe_start);
-            let safe_len = safe_end - safe_start;
+            let _freq = Self::midi_key_to_freq(key);
+            let vel_ratio = Self::velocity_to_ratio(velocity) * vol_factor as f64;
 
-            if safe_len > 0 {
-                let buffer = context.create_buffer(1, safe_len as u32, sample_rate)?;
-                let src_data = &soundfont.sample_data[safe_start..safe_end];
-                buffer.copy_to_channel(&src_data, 0)?;
-                Some(buffer)
+            // sample_idxが範囲外の場合のフォールバック
+            let shdr = if sample_idx < soundfont.sample_headers.len() {
+                Some(&soundfont.sample_headers[sample_idx])
+            } else if !soundfont.sample_headers.is_empty() {
+                Some(&soundfont.sample_headers[0])
             } else {
                 None
+            };
+
+            let sample_rate = if let Some(h) = shdr {
+                h.sample_rate as f32
+            } else {
+                44100.0
+            };
+
+            let mut original_pitch = if let Some(h) = shdr {
+                h.original_pitch as f32
+            } else {
+                60.0
+            };
+
+            let pitch_correction = if let Some(h) = shdr {
+                h.pitch_correction as f32
+            } else {
+                0.0
+            };
+
+            // overridingRootKey が指定されている場合は優先
+            if let Some(root_key) = overriding_root_key {
+                // SF2の仕様では0~127が有効とされている
+                if root_key <= 127 {
+                    original_pitch = root_key as f32;
+                }
             }
-        } else {
-            None
-        };
 
-        // 1. AudioBufferSourceNode
-        let source_node = context.create_buffer_source()?;
-        if let Some(buf) = &audio_buffer {
-            source_node.set_buffer(Some(buf));
-        }
+            let key_pitch = key as f32;
+            // ピッチの計算
+            // Scale Tuning が指定されていれば、それがピッチのスケーリングに使われる（デフォルト 100% = 1.0）
+            // パーカッション(Channel 10)などで Scale Tuning が0の場合はキーによるピッチ変化がおきない
+            let scale_tuning_ratio = scale_tuning / 100.0;
+            let exponent = ((key_pitch - original_pitch) * scale_tuning_ratio + coarse_tune as f32)
+                / 12.0
+                + (pitch_correction + fine_tune as f32) / 1200.0;
+            let playback_rate = 2.0_f32.powf(exponent);
 
-        // --- Pitch Bend 処理 ---
-        let pb_range_semitones = pitch_bend_sensitivity; // RPN から取得した値を使用
-        let calc_pb_rate = |bend: i16| -> f32 {
-            let bend_norm = bend as f32 / 8192.0;
-            let bend_semitones = bend_norm * pb_range_semitones;
-            let bend_rate = 2.0_f32.powf(bend_semitones / 12.0);
-            playback_rate * bend_rate
-        };
+            // 動的にAudioBufferを生成する
+            let audio_buffer = if let Some(h) = shdr {
+                let start_idx = (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
+                let end_idx = (h.end as i64 + sample_offsets.end as i64).max(0) as usize;
 
-        let pb_param = source_node.playback_rate();
-        let init_pb = pitch_bends.first().map(|v| v.bend).unwrap_or(0);
+                // 安全のためデータサイズの範囲内にする
+                let safe_start = start_idx.min(soundfont.sample_data.len());
+                let safe_end = end_idx.min(soundfont.sample_data.len()).max(safe_start);
+                let safe_len = safe_end - safe_start;
 
-        // 常にset_value_at_timeで初期ピッチを設定する
-        pb_param.set_value_at_time(calc_pb_rate(init_pb), start_time)?;
+                if safe_len > 0 {
+                    let buffer = context.create_buffer(1, safe_len as u32, sample_rate)?;
+                    let src_data = &soundfont.sample_data[safe_start..safe_end];
+                    buffer.copy_to_channel(&src_data, 0)?;
+                    Some(buffer)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-        let pb_on_time = pitch_bends.first().map(|v| v.time).unwrap_or(0.0);
-        for event in pitch_bends.iter().skip(1) {
-            let event_time = start_time + (event.time - pb_on_time);
-            if event_time > start_time {
-                pb_param.set_target_at_time(calc_pb_rate(event.bend), event_time, 0.01)?;
+            // 1. AudioBufferSourceNode
+            let source_node = context.create_buffer_source()?;
+            if let Some(buf) = &audio_buffer {
+                source_node.set_buffer(Some(buf));
             }
-        }
 
-        // -- LFO Setup --
-        let mut lfo_nodes = vec![];
-        let source_detune = source_node.detune();
+            // --- Pitch Bend 処理 ---
+            let pb_range_semitones = pitch_bend_sensitivity; // RPN から取得した値を使用
+            let calc_pb_rate = |bend: i16| -> f32 {
+                let bend_norm = bend as f32 / 8192.0;
+                let bend_semitones = bend_norm * pb_range_semitones;
+                let bend_rate = 2.0_f32.powf(bend_semitones / 12.0);
+                playback_rate * bend_rate
+            };
 
-        let mut mod_lfo_osc = None;
-        if mod_lfo.to_pitch != 0.0 || mod_lfo.to_filter != 0.0 || mod_lfo.to_volume != 0.0 {
-            let osc = context.create_oscillator()?;
-            osc.set_type(web_sys::OscillatorType::Triangle);
-            osc.frequency().set_value(mod_lfo.freq);
-            mod_lfo_osc = Some(osc.clone());
-            lfo_nodes.push(osc.into());
-        }
+            let pb_param = source_node.playback_rate();
+            let init_pb = pitch_bends.first().map(|v| v.bend).unwrap_or(0);
 
-        let mut vib_lfo_osc = None;
-        let init_mod = modulations.first().map(|v| v.modulation).unwrap_or(0);
-        let has_modulation = modulations.iter().any(|v| v.modulation > 0) || init_mod > 0;
+            // 常にset_value_at_timeで初期ピッチを設定する
+            pb_param.set_value_at_time(calc_pb_rate(init_pb), start_time)?;
 
-        if vib_lfo.to_pitch != 0.0 || has_modulation {
-            let osc = context.create_oscillator()?;
-            osc.set_type(web_sys::OscillatorType::Triangle);
-            osc.frequency().set_value(vib_lfo.freq);
-            vib_lfo_osc = Some(osc.clone());
-            lfo_nodes.push(osc.into());
-        }
-
-        if let Some(osc) = &mod_lfo_osc {
-            if mod_lfo.to_pitch != 0.0 {
-                let p_gain = context.create_gain()?;
-                p_gain.gain().set_value(mod_lfo.to_pitch);
-                osc.connect_with_audio_node(&p_gain)?;
-                p_gain.connect_with_audio_param(&source_detune)?;
-                lfo_nodes.push(p_gain.into());
+            let pb_on_time = pitch_bends.first().map(|v| v.time).unwrap_or(0.0);
+            for event in pitch_bends.iter().skip(1) {
+                let event_time = start_time + (event.time - pb_on_time);
+                if event_time > start_time {
+                    pb_param.set_target_at_time(calc_pb_rate(event.bend), event_time, 0.01)?;
+                }
             }
-        }
 
-        if let Some(osc) = &vib_lfo_osc {
+            // -- LFO Setup --
+            let mut lfo_nodes = vec![];
+            let source_detune = source_node.detune();
+
+            let mut mod_lfo_osc = None;
+            if mod_lfo.to_pitch != 0.0 || mod_lfo.to_filter != 0.0 || mod_lfo.to_volume != 0.0 {
+                let osc = context.create_oscillator()?;
+                osc.set_type(web_sys::OscillatorType::Triangle);
+                osc.frequency().set_value(mod_lfo.freq);
+                mod_lfo_osc = Some(osc.clone());
+                lfo_nodes.push(osc.into());
+            }
+
+            let mut vib_lfo_osc = None;
+            let init_mod = modulations.first().map(|v| v.modulation).unwrap_or(0);
+            let has_modulation = modulations.iter().any(|v| v.modulation > 0) || init_mod > 0;
+
             if vib_lfo.to_pitch != 0.0 || has_modulation {
-                let p_gain = context.create_gain()?;
+                let osc = context.create_oscillator()?;
+                osc.set_type(web_sys::OscillatorType::Triangle);
+                osc.frequency().set_value(vib_lfo.freq);
+                vib_lfo_osc = Some(osc.clone());
+                lfo_nodes.push(osc.into());
+            }
 
-                let calc_vib_pitch =
-                    |mod_val: u8| -> f32 { vib_lfo.to_pitch + (mod_val as f32 / 127.0) * 50.0 };
+            if let Some(osc) = &mod_lfo_osc {
+                if mod_lfo.to_pitch != 0.0 {
+                    let p_gain = context.create_gain()?;
+                    p_gain.gain().set_value(mod_lfo.to_pitch);
+                    osc.connect_with_audio_node(&p_gain)?;
+                    p_gain.connect_with_audio_param(&source_detune)?;
+                    lfo_nodes.push(p_gain.into());
+                }
+            }
 
-                p_gain
-                    .gain()
-                    .set_value_at_time(calc_vib_pitch(init_mod), start_time)?;
+            if let Some(osc) = &vib_lfo_osc {
+                if vib_lfo.to_pitch != 0.0 || has_modulation {
+                    let p_gain = context.create_gain()?;
 
-                let mod_on_time = modulations.first().map(|v| v.time).unwrap_or(0.0);
-                for event in modulations.iter().skip(1) {
-                    let event_time = start_time + (event.time - mod_on_time);
+                    let calc_vib_pitch =
+                        |mod_val: u8| -> f32 { vib_lfo.to_pitch + (mod_val as f32 / 127.0) * 50.0 };
+
+                    p_gain
+                        .gain()
+                        .set_value_at_time(calc_vib_pitch(init_mod), start_time)?;
+
+                    let mod_on_time = modulations.first().map(|v| v.time).unwrap_or(0.0);
+                    for event in modulations.iter().skip(1) {
+                        let event_time = start_time + (event.time - mod_on_time);
+                        if event_time > start_time {
+                            p_gain.gain().set_target_at_time(
+                                calc_vib_pitch(event.modulation),
+                                event_time,
+                                0.01,
+                            )?;
+                        }
+                    }
+
+                    osc.connect_with_audio_node(&p_gain)?;
+                    p_gain.connect_with_audio_param(&source_detune)?;
+                    lfo_nodes.push(p_gain.into());
+                }
+            }
+
+            // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
+            if let Some(h) = shdr {
+                // sampleModes: 0 (no loop), 1 (loop continuously), 2 (no loop), 3 (loop for duration of key depression)
+                let loop_enabled = sample_modes == 1 || sample_modes == 3;
+                source_node.set_loop(loop_enabled);
+
+                if loop_enabled {
+                    let effective_start =
+                        (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
+                    let loop_start_idx =
+                        (h.start_loop as i64 + sample_offsets.start_loop as i64).max(0) as usize;
+                    let loop_end_idx =
+                        (h.end_loop as i64 + sample_offsets.end_loop as i64).max(0) as usize;
+
+                    // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
+                    let rel_loop_start =
+                        loop_start_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
+                    let rel_loop_end =
+                        loop_end_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
+                    source_node.set_loop_start(rel_loop_start.max(0.0));
+                    source_node.set_loop_end(rel_loop_end.max(0.0));
+                }
+            }
+
+            // 2. VCA (Volume Envelope) ADSRを構築
+            let vca = context.create_gain()?;
+            let vca_gain = vca.gain();
+
+            let mut current_time = start_time;
+            vca_gain.set_value_at_time(0.0001, current_time)?;
+
+            if adsr.delay > 0.0 {
+                current_time += adsr.delay;
+                vca_gain.set_value_at_time(0.0001, current_time)?;
+            }
+
+            current_time += adsr.attack;
+            vca_gain
+                .exponential_ramp_to_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
+
+            if adsr.hold > 0.0 {
+                current_time += adsr.hold;
+                vca_gain.set_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
+            }
+
+            current_time += adsr.decay;
+            let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
+            if end_time > current_time {
+                vca_gain.exponential_ramp_to_value_at_time(
+                    (vca_sus as f32).max(0.0001),
+                    current_time,
+                )?;
+                vca_gain
+                    .exponential_ramp_to_value_at_time((vca_sus as f32).max(0.0001), end_time)?;
+            } else {
+                // end_time が current_time より小さい場合は、end_timeまでのターゲットボリュームを計算して反映する
+                // Web Audio APIの exponential_ramp_to_value と同じ計算式を使用する
+                // V(t) = V0 * (V1 / V0) ^ ((t - T0) / (T1 - T0))
+                let t0 = current_time - adsr.decay;
+                let v0 = (vel_ratio as f64).max(0.0001);
+                let target_volume = if adsr.decay > 0.0 && end_time > t0 {
+                    v0 * (vca_sus / v0).powf((end_time - t0) / adsr.decay)
+                } else {
+                    v0 // AttackやHoldフェーズの途中で離鍵された場合はピーク音量(v0)とする
+                };
+                vca_gain.exponential_ramp_to_value_at_time(
+                    (target_volume as f32).max(0.0001),
+                    end_time,
+                )?;
+            }
+            vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
+
+            // Filter (BiquadFilterNode - Lowpass) を構築して initialFilterFc, initialFilterQ を設定
+            let filter = context.create_biquad_filter()?;
+            filter.set_type(web_sys::BiquadFilterType::Lowpass);
+
+            // initialFilterFc: セント単位 (0 cents = 8.176 Hz) => Hz = 440 * 2^((cents - 6900) / 1200)
+            let freq_hz = 440.0 * 2.0_f32.powf((filter_fc - 6900.0) / 1200.0);
+            let max_freq = context.sample_rate() / 2.0;
+            let clamped_freq = freq_hz.min(max_freq).max(0.0);
+            filter.frequency().set_value(clamped_freq);
+
+            // initialFilterQ: セントベル(cB)単位。Web Audio APIのQ値(Lowpass用)はデシベル(dB)なので 10.0 で割る
+            let q_db = filter_q / 10.0;
+            filter.q().set_value(q_db);
+
+            // -- Apply ModEnv to Pitch & FilterFc --
+            let apply_env = |param: &web_sys::AudioParam, amount: f32| -> Result<(), JsValue> {
+                if amount == 0.0 {
+                    return Ok(());
+                }
+                let mut current_time = start_time;
+                param.set_value_at_time(0.0, current_time)?;
+
+                if mod_env.adsr.delay > 0.0 {
+                    current_time += mod_env.adsr.delay;
+                    param.set_value_at_time(0.0, current_time)?;
+                }
+
+                current_time += mod_env.adsr.attack;
+                param.linear_ramp_to_value_at_time(amount, current_time)?;
+
+                if mod_env.adsr.hold > 0.0 {
+                    current_time += mod_env.adsr.hold;
+                    param.set_value_at_time(amount, current_time)?;
+                }
+
+                current_time += mod_env.adsr.decay;
+                let sus_val = amount * mod_env.adsr.sustain as f32;
+                param.linear_ramp_to_value_at_time(sus_val, current_time)?;
+
+                if end_time > current_time {
+                    param.linear_ramp_to_value_at_time(sus_val, end_time)?;
+                }
+
+                param.linear_ramp_to_value_at_time(0.0, end_time + mod_env.adsr.release)?;
+                Ok(())
+            };
+
+            apply_env(&source_detune, mod_env.to_pitch)?;
+            apply_env(&filter.detune(), mod_env.to_filter)?;
+
+            if let Some(osc) = &mod_lfo_osc {
+                if mod_lfo.to_filter != 0.0 {
+                    let f_gain = context.create_gain()?;
+                    f_gain.gain().set_value(mod_lfo.to_filter);
+                    osc.connect_with_audio_node(&f_gain)?;
+                    f_gain.connect_with_audio_param(&filter.detune())?;
+                    lfo_nodes.push(f_gain.into());
+                }
+            }
+
+            // Connection
+            source_node.connect_with_audio_node(&filter)?;
+            filter.connect_with_audio_node(&vca)?;
+
+            let tremor_depth = 1.0 - 10.0_f32.powf(-mod_lfo.to_volume / 200.0);
+            let mut tremolo_vca_node = None;
+            if let Some(osc) = &mod_lfo_osc {
+                if mod_lfo.to_volume > 0.0 && tremor_depth > 0.0 {
+                    let vca_lfo_gain = context.create_gain()?;
+                    vca_lfo_gain.gain().set_value(tremor_depth);
+
+                    let tremolo_vca = context.create_gain()?;
+                    tremolo_vca.gain().set_value(1.0);
+
+                    osc.connect_with_audio_node(&vca_lfo_gain)?;
+                    vca_lfo_gain.connect_with_audio_param(&tremolo_vca.gain())?;
+
+                    vca.connect_with_audio_node(&tremolo_vca)?;
+
+                    lfo_nodes.push(vca_lfo_gain.into());
+
+                    let tremolo_vca_audio_node: web_sys::AudioNode = tremolo_vca.into();
+                    lfo_nodes.push(tremolo_vca_audio_node.clone());
+                    tremolo_vca_node = Some(tremolo_vca_audio_node);
+                }
+            }
+
+            let ch_vol_node = context.create_gain()?;
+            let init_ch_vol = channel_volumes.first().map(|v| v.volume).unwrap_or(100);
+            ch_vol_node
+                .gain()
+                .set_value(Self::velocity_to_ratio(init_ch_vol) as f32);
+
+            let on_time = channel_volumes.first().map(|v| v.time).unwrap_or(0.0);
+            for event in channel_volumes.iter().skip(1) {
+                let event_time = start_time + (event.time - on_time);
+                if event_time > start_time {
+                    ch_vol_node.gain().set_target_at_time(
+                        Self::velocity_to_ratio(event.volume) as f32,
+                        event_time,
+                        0.01,
+                    )?;
+                }
+            }
+
+            if let Some(t_vca) = tremolo_vca_node {
+                t_vca.connect_with_audio_node(&ch_vol_node)?;
+            } else {
+                vca.connect_with_audio_node(&ch_vol_node)?;
+            }
+
+            let pan_node = context.create_stereo_panner()?;
+
+            let calc_pan_value = |note_pan: u8| -> f32 {
+                // MIDI pan 0-127, center is 64. Scale to -1.0 to 1.0
+                let note_pan_norm = (note_pan as f32 - 64.0) / 64.0;
+                (pan_value + note_pan_norm).clamp(-1.0, 1.0)
+            };
+
+            let pan_param = pan_node.pan();
+            let init_pan = pans.first().map(|v| v.pan).unwrap_or(64);
+            pan_param.set_value_at_time(calc_pan_value(init_pan), start_time)?;
+
+            let pan_on_time = pans.first().map(|v| v.time).unwrap_or(0.0);
+            for event in pans.iter().skip(1) {
+                let event_time = start_time + (event.time - pan_on_time);
+                if event_time > start_time {
+                    pan_param.set_target_at_time(calc_pan_value(event.pan), event_time, 0.01)?;
+                }
+            }
+
+            let expr_vol_node = context.create_gain()?;
+            let init_expr_vol = expressions.first().map(|v| v.expression).unwrap_or(127);
+            expr_vol_node
+                .gain()
+                .set_value(Self::velocity_to_ratio(init_expr_vol) as f32);
+
+            let expr_on_time = expressions.first().map(|v| v.time).unwrap_or(0.0);
+            for event in expressions.iter().skip(1) {
+                let event_time = start_time + (event.time - expr_on_time);
+                if event_time > start_time {
+                    expr_vol_node.gain().set_target_at_time(
+                        Self::velocity_to_ratio(event.expression) as f32,
+                        event_time,
+                        0.01,
+                    )?;
+                }
+            }
+
+            ch_vol_node.connect_with_audio_node(&expr_vol_node)?;
+            expr_vol_node.connect_with_audio_node(&pan_node)?;
+
+            pan_node.connect_with_audio_node(dry_send)?;
+
+            let calc_reverb_value = |note_reverb: u8| -> f32 {
+                let note_reverb_norm = note_reverb as f32 / 127.0;
+                (reverb_send_ratio + note_reverb_norm).clamp(0.0, 1.0)
+            };
+
+            let init_reverb = reverbs.first().map(|v| v.reverb).unwrap_or(0);
+            let has_reverb = reverbs.iter().any(|v| v.reverb > 0) || reverb_send_ratio > 0.0;
+
+            if has_reverb {
+                let reverb_gain = context.create_gain()?;
+                let reverb_param = reverb_gain.gain();
+                reverb_param.set_value_at_time(calc_reverb_value(init_reverb), start_time)?;
+
+                let reverb_on_time = reverbs.first().map(|v| v.time).unwrap_or(0.0);
+                for event in reverbs.iter().skip(1) {
+                    let event_time = start_time + (event.time - reverb_on_time);
                     if event_time > start_time {
-                        p_gain.gain().set_target_at_time(
-                            calc_vib_pitch(event.modulation),
+                        reverb_param.set_target_at_time(
+                            calc_reverb_value(event.reverb),
                             event_time,
                             0.01,
                         )?;
                     }
                 }
 
-                osc.connect_with_audio_node(&p_gain)?;
-                p_gain.connect_with_audio_param(&source_detune)?;
-                lfo_nodes.push(p_gain.into());
+                pan_node.connect_with_audio_node(&reverb_gain)?;
+                reverb_gain.connect_with_audio_node(reverb_send)?;
+                lfo_nodes.push(reverb_gain.into());
             }
-        }
 
-        // sf2のサンプルヘッダーからループポイント等の情報を取得して設定
-        if let Some(h) = shdr {
-            // sampleModes: 0 (no loop), 1 (loop continuously), 2 (no loop), 3 (loop for duration of key depression)
-            let loop_enabled = sample_modes == 1 || sample_modes == 3;
-            source_node.set_loop(loop_enabled);
-
-            if loop_enabled {
-                let effective_start =
-                    (h.start as i64 + sample_offsets.start as i64).max(0) as usize;
-                let loop_start_idx =
-                    (h.start_loop as i64 + sample_offsets.start_loop as i64).max(0) as usize;
-                let loop_end_idx =
-                    (h.end_loop as i64 + sample_offsets.end_loop as i64).max(0) as usize;
-
-                // 動的生成の場合、取り出したAudioBufferサイズに合わせた相対位置に直す
-                let rel_loop_start =
-                    loop_start_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
-                let rel_loop_end =
-                    loop_end_idx.saturating_sub(effective_start) as f64 / sample_rate as f64;
-                source_node.set_loop_start(rel_loop_start.max(0.0));
-                source_node.set_loop_end(rel_loop_end.max(0.0));
-            }
-        }
-
-        // 2. VCA (Volume Envelope) ADSRを構築
-        let vca = context.create_gain()?;
-        let vca_gain = vca.gain();
-
-        let mut current_time = start_time;
-        vca_gain.set_value_at_time(0.0001, current_time)?;
-
-        if adsr.delay > 0.0 {
-            current_time += adsr.delay;
-            vca_gain.set_value_at_time(0.0001, current_time)?;
-        }
-
-        current_time += adsr.attack;
-        vca_gain.exponential_ramp_to_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
-
-        if adsr.hold > 0.0 {
-            current_time += adsr.hold;
-            vca_gain.set_value_at_time((vel_ratio as f32).max(0.0001), current_time)?;
-        }
-
-        current_time += adsr.decay;
-        let vca_sus = (adsr.sustain * vel_ratio).max(0.0001);
-        if end_time > current_time {
-            vca_gain
-                .exponential_ramp_to_value_at_time((vca_sus as f32).max(0.0001), current_time)?;
-            vca_gain.exponential_ramp_to_value_at_time((vca_sus as f32).max(0.0001), end_time)?;
-        } else {
-            // end_time が current_time より小さい場合は、end_timeまでのターゲットボリュームを計算して反映する
-            // Web Audio APIの exponential_ramp_to_value と同じ計算式を使用する
-            // V(t) = V0 * (V1 / V0) ^ ((t - T0) / (T1 - T0))
-            let t0 = current_time - adsr.decay;
-            let v0 = (vel_ratio as f64).max(0.0001);
-            let target_volume = if adsr.decay > 0.0 && end_time > t0 {
-                v0 * (vca_sus / v0).powf((end_time - t0) / adsr.decay)
-            } else {
-                v0 // AttackやHoldフェーズの途中で離鍵された場合はピーク音量(v0)とする
+            let calc_chorus_value = |note_chorus: u8| -> f32 {
+                let note_chorus_norm = note_chorus as f32 / 127.0;
+                (chorus_send_ratio + note_chorus_norm).clamp(0.0, 1.0)
             };
-            vca_gain
-                .exponential_ramp_to_value_at_time((target_volume as f32).max(0.0001), end_time)?;
-        }
-        vca_gain.exponential_ramp_to_value_at_time(0.0001, end_time + adsr.release)?;
 
-        // Filter (BiquadFilterNode - Lowpass) を構築して initialFilterFc, initialFilterQ を設定
-        let filter = context.create_biquad_filter()?;
-        filter.set_type(web_sys::BiquadFilterType::Lowpass);
+            let init_chorus = choruses.first().map(|v| v.chorus).unwrap_or(0);
+            let has_chorus = choruses.iter().any(|v| v.chorus > 0) || chorus_send_ratio > 0.0;
 
-        // initialFilterFc: セント単位 (0 cents = 8.176 Hz) => Hz = 440 * 2^((cents - 6900) / 1200)
-        let freq_hz = 440.0 * 2.0_f32.powf((filter_fc - 6900.0) / 1200.0);
-        let max_freq = context.sample_rate() / 2.0;
-        let clamped_freq = freq_hz.min(max_freq).max(0.0);
-        filter.frequency().set_value(clamped_freq);
+            if has_chorus {
+                let chorus_gain = context.create_gain()?;
+                let chorus_param = chorus_gain.gain();
+                chorus_param.set_value_at_time(calc_chorus_value(init_chorus), start_time)?;
 
-        // initialFilterQ: セントベル(cB)単位。Web Audio APIのQ値(Lowpass用)はデシベル(dB)なので 10.0 で割る
-        let q_db = filter_q / 10.0;
-        filter.q().set_value(q_db);
-
-        // -- Apply ModEnv to Pitch & FilterFc --
-        let apply_env = |param: &web_sys::AudioParam, amount: f32| -> Result<(), JsValue> {
-            if amount == 0.0 {
-                return Ok(());
-            }
-            let mut current_time = start_time;
-            param.set_value_at_time(0.0, current_time)?;
-
-            if mod_env.adsr.delay > 0.0 {
-                current_time += mod_env.adsr.delay;
-                param.set_value_at_time(0.0, current_time)?;
-            }
-
-            current_time += mod_env.adsr.attack;
-            param.linear_ramp_to_value_at_time(amount, current_time)?;
-
-            if mod_env.adsr.hold > 0.0 {
-                current_time += mod_env.adsr.hold;
-                param.set_value_at_time(amount, current_time)?;
-            }
-
-            current_time += mod_env.adsr.decay;
-            let sus_val = amount * mod_env.adsr.sustain as f32;
-            param.linear_ramp_to_value_at_time(sus_val, current_time)?;
-
-            if end_time > current_time {
-                param.linear_ramp_to_value_at_time(sus_val, end_time)?;
-            }
-
-            param.linear_ramp_to_value_at_time(0.0, end_time + mod_env.adsr.release)?;
-            Ok(())
-        };
-
-        apply_env(&source_detune, mod_env.to_pitch)?;
-        apply_env(&filter.detune(), mod_env.to_filter)?;
-
-        if let Some(osc) = &mod_lfo_osc {
-            if mod_lfo.to_filter != 0.0 {
-                let f_gain = context.create_gain()?;
-                f_gain.gain().set_value(mod_lfo.to_filter);
-                osc.connect_with_audio_node(&f_gain)?;
-                f_gain.connect_with_audio_param(&filter.detune())?;
-                lfo_nodes.push(f_gain.into());
-            }
-        }
-
-        // Connection
-        source_node.connect_with_audio_node(&filter)?;
-        filter.connect_with_audio_node(&vca)?;
-
-        let tremor_depth = 1.0 - 10.0_f32.powf(-mod_lfo.to_volume / 200.0);
-        let mut tremolo_vca_node = None;
-        if let Some(osc) = &mod_lfo_osc {
-            if mod_lfo.to_volume > 0.0 && tremor_depth > 0.0 {
-                let vca_lfo_gain = context.create_gain()?;
-                vca_lfo_gain.gain().set_value(tremor_depth);
-
-                let tremolo_vca = context.create_gain()?;
-                tremolo_vca.gain().set_value(1.0);
-
-                osc.connect_with_audio_node(&vca_lfo_gain)?;
-                vca_lfo_gain.connect_with_audio_param(&tremolo_vca.gain())?;
-
-                vca.connect_with_audio_node(&tremolo_vca)?;
-
-                lfo_nodes.push(vca_lfo_gain.into());
-
-                let tremolo_vca_audio_node: web_sys::AudioNode = tremolo_vca.into();
-                lfo_nodes.push(tremolo_vca_audio_node.clone());
-                tremolo_vca_node = Some(tremolo_vca_audio_node);
-            }
-        }
-
-        let ch_vol_node = context.create_gain()?;
-        let init_ch_vol = channel_volumes.first().map(|v| v.volume).unwrap_or(100);
-        ch_vol_node
-            .gain()
-            .set_value(Self::velocity_to_ratio(init_ch_vol) as f32);
-
-        let on_time = channel_volumes.first().map(|v| v.time).unwrap_or(0.0);
-        for event in channel_volumes.iter().skip(1) {
-            let event_time = start_time + (event.time - on_time);
-            if event_time > start_time {
-                ch_vol_node.gain().set_target_at_time(
-                    Self::velocity_to_ratio(event.volume) as f32,
-                    event_time,
-                    0.01,
-                )?;
-            }
-        }
-
-        if let Some(t_vca) = tremolo_vca_node {
-            t_vca.connect_with_audio_node(&ch_vol_node)?;
-        } else {
-            vca.connect_with_audio_node(&ch_vol_node)?;
-        }
-
-        let pan_node = context.create_stereo_panner()?;
-
-        let calc_pan_value = |note_pan: u8| -> f32 {
-            // MIDI pan 0-127, center is 64. Scale to -1.0 to 1.0
-            let note_pan_norm = (note_pan as f32 - 64.0) / 64.0;
-            (pan_value + note_pan_norm).clamp(-1.0, 1.0)
-        };
-
-        let pan_param = pan_node.pan();
-        let init_pan = pans.first().map(|v| v.pan).unwrap_or(64);
-        pan_param.set_value_at_time(calc_pan_value(init_pan), start_time)?;
-
-        let pan_on_time = pans.first().map(|v| v.time).unwrap_or(0.0);
-        for event in pans.iter().skip(1) {
-            let event_time = start_time + (event.time - pan_on_time);
-            if event_time > start_time {
-                pan_param.set_target_at_time(calc_pan_value(event.pan), event_time, 0.01)?;
-            }
-        }
-
-        let expr_vol_node = context.create_gain()?;
-        let init_expr_vol = expressions.first().map(|v| v.expression).unwrap_or(127);
-        expr_vol_node
-            .gain()
-            .set_value(Self::velocity_to_ratio(init_expr_vol) as f32);
-
-        let expr_on_time = expressions.first().map(|v| v.time).unwrap_or(0.0);
-        for event in expressions.iter().skip(1) {
-            let event_time = start_time + (event.time - expr_on_time);
-            if event_time > start_time {
-                expr_vol_node.gain().set_target_at_time(
-                    Self::velocity_to_ratio(event.expression) as f32,
-                    event_time,
-                    0.01,
-                )?;
-            }
-        }
-
-        ch_vol_node.connect_with_audio_node(&expr_vol_node)?;
-        expr_vol_node.connect_with_audio_node(&pan_node)?;
-
-        pan_node.connect_with_audio_node(dry_send)?;
-
-        let calc_reverb_value = |note_reverb: u8| -> f32 {
-            let note_reverb_norm = note_reverb as f32 / 127.0;
-            (reverb_send_ratio + note_reverb_norm).clamp(0.0, 1.0)
-        };
-
-        let init_reverb = reverbs.first().map(|v| v.reverb).unwrap_or(0);
-        let has_reverb = reverbs.iter().any(|v| v.reverb > 0) || reverb_send_ratio > 0.0;
-
-        if has_reverb {
-            let reverb_gain = context.create_gain()?;
-            let reverb_param = reverb_gain.gain();
-            reverb_param.set_value_at_time(calc_reverb_value(init_reverb), start_time)?;
-
-            let reverb_on_time = reverbs.first().map(|v| v.time).unwrap_or(0.0);
-            for event in reverbs.iter().skip(1) {
-                let event_time = start_time + (event.time - reverb_on_time);
-                if event_time > start_time {
-                    reverb_param.set_target_at_time(
-                        calc_reverb_value(event.reverb),
-                        event_time,
-                        0.01,
-                    )?;
+                let chorus_on_time = choruses.first().map(|v| v.time).unwrap_or(0.0);
+                for event in choruses.iter().skip(1) {
+                    let event_time = start_time + (event.time - chorus_on_time);
+                    if event_time > start_time {
+                        chorus_param.set_target_at_time(
+                            calc_chorus_value(event.chorus),
+                            event_time,
+                            0.01,
+                        )?;
+                    }
                 }
+
+                pan_node.connect_with_audio_node(&chorus_gain)?;
+                chorus_gain.connect_with_audio_node(chorus_send)?;
+                lfo_nodes.push(chorus_gain.into());
             }
 
-            pan_node.connect_with_audio_node(&reverb_gain)?;
-            reverb_gain.connect_with_audio_node(reverb_send)?;
-            lfo_nodes.push(reverb_gain.into());
-        }
-
-        let calc_chorus_value = |note_chorus: u8| -> f32 {
-            let note_chorus_norm = note_chorus as f32 / 127.0;
-            (chorus_send_ratio + note_chorus_norm).clamp(0.0, 1.0)
-        };
-
-        let init_chorus = choruses.first().map(|v| v.chorus).unwrap_or(0);
-        let has_chorus = choruses.iter().any(|v| v.chorus > 0) || chorus_send_ratio > 0.0;
-
-        if has_chorus {
-            let chorus_gain = context.create_gain()?;
-            let chorus_param = chorus_gain.gain();
-            chorus_param.set_value_at_time(calc_chorus_value(init_chorus), start_time)?;
-
-            let chorus_on_time = choruses.first().map(|v| v.time).unwrap_or(0.0);
-            for event in choruses.iter().skip(1) {
-                let event_time = start_time + (event.time - chorus_on_time);
-                if event_time > start_time {
-                    chorus_param.set_target_at_time(
-                        calc_chorus_value(event.chorus),
-                        event_time,
-                        0.01,
-                    )?;
-                }
+            // Play
+            // AudioBufferを切り出しているのでオフセットを0にする
+            if let Some(_) = shdr {
+                source_node.start_with_when(start_time)?;
+            } else {
+                source_node.start_with_when(start_time)?;
             }
 
-            pan_node.connect_with_audio_node(&chorus_gain)?;
-            chorus_gain.connect_with_audio_node(chorus_send)?;
-            lfo_nodes.push(chorus_gain.into());
-        }
-
-        // Play
-        // AudioBufferを切り出しているのでオフセットを0にする
-        if let Some(_) = shdr {
-            source_node.start_with_when(start_time)?;
-        } else {
-            source_node.start_with_when(start_time)?;
-        }
-
-        #[allow(deprecated)]
-        source_node.stop_with_when(end_time + adsr.release + 0.1)?;
-
-        if let Some(osc) = &mod_lfo_osc {
-            osc.start_with_when(start_time + mod_lfo.delay)?;
             #[allow(deprecated)]
-            osc.stop_with_when(end_time + adsr.release + 0.1)?;
-        }
-        if let Some(osc) = &vib_lfo_osc {
-            osc.start_with_when(start_time + vib_lfo.delay)?;
-            #[allow(deprecated)]
-            osc.stop_with_when(end_time + adsr.release + 0.1)?;
-        }
+            source_node.stop_with_when(end_time + adsr.release + 0.1)?;
 
-        let cleanup_time = end_time + adsr.release + 0.2;
-        let vca_gain_param = vca.gain();
+            if let Some(osc) = &mod_lfo_osc {
+                osc.start_with_when(start_time + mod_lfo.delay)?;
+                #[allow(deprecated)]
+                osc.stop_with_when(end_time + adsr.release + 0.1)?;
+            }
+            if let Some(osc) = &vib_lfo_osc {
+                osc.start_with_when(start_time + vib_lfo.delay)?;
+                #[allow(deprecated)]
+                osc.stop_with_when(end_time + adsr.release + 0.1)?;
+            }
 
-        let mut final_nodes = vec![
-            source_node.into(),
-            filter.into(),
-            vca.into(),
-            ch_vol_node.into(),
-            expr_vol_node.into(),
-            pan_node.into(),
-        ];
-        final_nodes.extend(lfo_nodes);
+            let cleanup_time = end_time + adsr.release + 0.2;
+            let vca_gain_param = vca.gain();
+
+            let mut final_nodes = vec![
+                source_node.into(),
+                filter.into(),
+                vca.into(),
+                ch_vol_node.into(),
+                expr_vol_node.into(),
+                pan_node.into(),
+            ];
+            final_nodes.extend(lfo_nodes);
+
+            if cleanup_time > max_cleanup_time {
+                max_cleanup_time = cleanup_time;
+            }
+            all_final_nodes.append(&mut final_nodes);
+            all_vca_gains.push(vca_gain_param);
+        }
 
         Ok(SoundSource {
-            nodes: final_nodes,
+            nodes: all_final_nodes,
             now_time: start_time,
-            end_time: cleanup_time,
+            end_time: max_cleanup_time,
             exclusive_class,
             channel,
-            vca_gain: Some(vca_gain_param),
+            vca_gains: all_vca_gains,
         })
     }
 
@@ -661,41 +722,20 @@ impl SoundSource {
         program: u8,
         key: u8,
         velocity: u8,
-    ) -> Option<(
-        usize,
-        Option<u8>,
-        Adsr,
-        ModEnvParams,
-        f32,
-        f32,
-        u16,
-        SampleOffsets,
-        f32,
-        f32,
-        LfoParams,
-        LfoParams,
-        f32,
-        f32,
-        f32,
-        f32,
-        f32,
-        u16,
-    )> {
-        // 1. 該当のプリセットを検索
+    ) -> Vec<ZoneParams> {
+        let mut results = Vec::new();
+
         let preset_idx = soundfont
             .preset_headers
             .iter()
             .position(|p| p.preset == program as u16 && p.bank == bank)
-            // 該当がなければ別のBank/Programにフォールバック
             .or_else(|| {
                 if bank == 128 {
-                    // パーカッションで該当キットがない場合は標準ドラムキット(Bank 128, Preset 0)にフォールバック
                     soundfont
                         .preset_headers
                         .iter()
                         .position(|p| p.preset == 0 && p.bank == 128)
                 } else {
-                    // 通常楽器の場合は他のBankで同じProgramを探す(ただしBank 128のパーカッション以外)
                     soundfont
                         .preset_headers
                         .iter()
@@ -707,7 +747,12 @@ impl SoundSource {
                     .preset_headers
                     .iter()
                     .position(|p| p.preset == 0 && p.bank == 0)
-            })?;
+            });
+
+        let preset_idx = match preset_idx {
+            Some(idx) => idx,
+            None => return results,
+        };
 
         let pbag_start = soundfont.preset_headers[preset_idx].preset_bag_ndx as usize;
         let pbag_end = soundfont
@@ -716,7 +761,6 @@ impl SoundSource {
             .map(|p| p.preset_bag_ndx as usize)
             .unwrap_or(soundfont.preset_bags.len());
 
-        // 2. プリセットから一致するゾーンを検索し、その中でインストゥルメントを検索
         let mut p_global_gens = [None; 60];
 
         for b in pbag_start..pbag_end {
@@ -771,7 +815,6 @@ impl SoundSource {
                 if let Some(id) = inst_id {
                     let preset_gens = preset_local_gens;
 
-                    // 3. インストゥルメントから一致するサンプルを検索
                     if let Some(instrument) = soundfont.instruments.get(id) {
                         let ibag_start = instrument.inst_bag_ndx as usize;
                         let ibag_end = soundfont
@@ -1046,7 +1089,7 @@ impl SoundSource {
                                                 [GeneratorOperator::OverridingRootKey as usize])
                                             .unwrap_or(-1);
                                         let calculated_overriding_root_key =
-                                            if ork >= 0 && ork <= 127 {
+                                            if (0..=127).contains(&ork) {
                                                 Some(ork as u8)
                                             } else {
                                                 None
@@ -1075,17 +1118,17 @@ impl SoundSource {
                                         let exclusive_class =
                                             get_gen(GeneratorOperator::ExclusiveClass, 0) as u16;
 
-                                        return Some((
-                                            sid,
-                                            calculated_overriding_root_key,
+                                        let p = ZoneParams {
+                                            sample_id: sid,
+                                            overriding_root_key: calculated_overriding_root_key,
                                             adsr,
                                             mod_env,
-                                            initial_filter_fc as f32,
-                                            initial_filter_q as f32,
-                                            sample_modes as u16,
+                                            initial_filter_fc: initial_filter_fc as f32,
+                                            initial_filter_q: initial_filter_q as f32,
+                                            sample_modes: sample_modes as u16,
                                             sample_offsets,
-                                            coarse_tune as f32,
-                                            fine_tune as f32,
+                                            coarse_tune: coarse_tune as f32,
+                                            fine_tune: fine_tune as f32,
                                             mod_lfo,
                                             vib_lfo,
                                             scale_tuning,
@@ -1094,7 +1137,8 @@ impl SoundSource {
                                             chorus_send_ratio,
                                             pan_value,
                                             exclusive_class,
-                                        ));
+                                        };
+                                        results.push(p);
                                     }
                                 }
                             }
@@ -1104,9 +1148,27 @@ impl SoundSource {
             }
         }
 
-        None
-    }
+        let mut final_results = results.clone();
+        for i in 0..results.len() {
+            let p = &results[i];
+            if let Some(shdr) = soundfont.sample_headers.get(p.sample_id) {
+                if shdr.sample_type == 4 || shdr.sample_type == 32772 {
+                    let link_id = shdr.sample_link as usize;
+                    if let Some(right_zone) = results.iter().find(|z| z.sample_id == link_id) {
+                        final_results[i].coarse_tune = right_zone.coarse_tune;
+                        final_results[i].fine_tune = right_zone.fine_tune;
+                        final_results[i].scale_tuning = right_zone.scale_tuning;
+                        final_results[i].overriding_root_key = right_zone.overriding_root_key;
+                        final_results[i].mod_lfo.to_pitch = right_zone.mod_lfo.to_pitch;
+                        final_results[i].vib_lfo.to_pitch = right_zone.vib_lfo.to_pitch;
+                        final_results[i].mod_env.to_pitch = right_zone.mod_env.to_pitch;
+                    }
+                }
+            }
+        }
 
+        final_results
+    }
     fn velocity_to_ratio(velocity: u8) -> f64 {
         (velocity as f32 / 127.0).powi(2) as f64
     }
@@ -1120,24 +1182,17 @@ impl SoundSource {
     }
 
     pub fn cut_off(&mut self, time: f64) {
-        if let Some(gain) = &self.vca_gain {
-            let fade_time = 0.05; // 50ms fade out to avoid clicks
-            // Start fading out from current value
-            let _ = gain.cancel_scheduled_values(time);
-
-            // Try to get current value using setTargetAtTime,
-            // or we could use exponentialRampToValueAtTime if we knew the current volume.
-            // Since we can't reliably get the current parameter value synchronously,
-            // a setTargetAtTime approach toward 0 with a small time constant is robust.
-            let _ = gain.set_target_at_time(0.0001, time, fade_time / 3.0);
-
-            // Also schedule an absolute 0 later just to be sure
-            let _ = gain.set_value_at_time(0.0000, time + fade_time);
-
-            self.end_time = time + fade_time;
-        } else {
+        if self.vca_gains.is_empty() {
             self.end_time = time;
+            return;
         }
+        let fade_time = 0.05; // 50ms fade out to avoid clicks
+        for gain in &self.vca_gains {
+            let _ = gain.cancel_scheduled_values(time);
+            let _ = gain.set_target_at_time(0.0001, time, fade_time / 3.0);
+            let _ = gain.set_value_at_time(0.0000, time + fade_time);
+        }
+        self.end_time = time + fade_time;
     }
 
     pub fn channel(&self) -> u8 {
@@ -1189,13 +1244,14 @@ mod tests {
             for key in 35..=81 {
                 let result = SoundSource::find_sample_index(&sf, bank, program, key, velocity);
                 assert!(
-                    result.is_some(),
+                    !result.is_empty(),
                     "Failed to find sample for percussion key {} in Bank {} Program {}",
                     key,
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if !result.is_empty() {
+                    let idx = result[0].sample_id;
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
@@ -1220,13 +1276,14 @@ mod tests {
             for key in 35..=81 {
                 let result = SoundSource::find_sample_index(&sf, bank, program, key, velocity);
                 assert!(
-                    result.is_some(),
+                    !result.is_empty(),
                     "Failed to find sample for percussion key {} in Bank {} Program {}",
                     key,
                     bank,
                     program
                 );
-                if let Some((idx, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _)) = result {
+                if !result.is_empty() {
+                    let idx = result[0].sample_id;
                     println!("Key: {:>2} -> Sample Index: {}", key, idx);
                 }
             }
