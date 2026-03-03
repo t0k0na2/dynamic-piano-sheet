@@ -157,6 +157,100 @@ const MIDI_CC_NAMES: [&str; 128] = [
     "Poly Mode On",
 ];
 
+pub mod midi_cc {
+    // MSB (0-31)
+    pub const BANK_SELECT_MSB: u8 = 0;
+    pub const MODULATION: u8 = 1;
+    pub const BREATH_CONTROLLER_MSB: u8 = 2;
+    pub const FOOT_CONTROLLER_MSB: u8 = 4;
+    pub const PORTAMENTO_TIME_MSB: u8 = 5;
+    pub const DATA_ENTRY_MSB: u8 = 6;
+    pub const CHANNEL_VOLUME: u8 = 7;
+    pub const BALANCE_MSB: u8 = 8;
+    pub const PAN: u8 = 10;
+    pub const EXPRESSION: u8 = 11;
+    pub const EFFECT_CONTROL_1_MSB: u8 = 12;
+    pub const EFFECT_CONTROL_2_MSB: u8 = 13;
+    pub const GENERAL_PURPOSE_1_MSB: u8 = 16;
+    pub const GENERAL_PURPOSE_2_MSB: u8 = 17;
+    pub const GENERAL_PURPOSE_3_MSB: u8 = 18;
+    pub const GENERAL_PURPOSE_4_MSB: u8 = 19;
+
+    // LSB (32-63)
+    pub const BANK_SELECT_LSB: u8 = 32;
+    pub const MODULATION_LSB: u8 = 33;
+    pub const BREATH_CONTROLLER_LSB: u8 = 34;
+    pub const FOOT_CONTROLLER_LSB: u8 = 36;
+    pub const PORTAMENTO_TIME_LSB: u8 = 37;
+    pub const DATA_ENTRY_LSB: u8 = 38;
+    pub const CHANNEL_VOLUME_LSB: u8 = 39;
+    pub const BALANCE_LSB: u8 = 40;
+    pub const PAN_LSB: u8 = 42;
+    pub const EXPRESSION_LSB: u8 = 43;
+    pub const EFFECT_CONTROL_1_LSB: u8 = 44;
+    pub const EFFECT_CONTROL_2_LSB: u8 = 45;
+    pub const GENERAL_PURPOSE_1_LSB: u8 = 48;
+    pub const GENERAL_PURPOSE_2_LSB: u8 = 49;
+    pub const GENERAL_PURPOSE_3_LSB: u8 = 50;
+    pub const GENERAL_PURPOSE_4_LSB: u8 = 51;
+
+    // Switch (64-69)
+    pub const SUSTAIN_PEDAL: u8 = 64; // Damper Pedal
+    pub const PORTAMENTO_SWITCH: u8 = 65;
+    pub const SOSTENUTO_PEDAL: u8 = 66;
+    pub const SOFT_PEDAL: u8 = 67;
+    pub const LEGATO_FOOTSWITCH: u8 = 68;
+    pub const HOLD_2_PEDAL: u8 = 69;
+
+    // Sound Controllers (70-79)
+    pub const SOUND_VARIATION: u8 = 70;
+    pub const TIMBRE_HARMONIC_INTENSITY: u8 = 71;
+    pub const RELEASE_TIME: u8 = 72;
+    pub const ATTACK_TIME: u8 = 73;
+    pub const BRIGHTNESS: u8 = 74;
+    pub const SOUND_CONTROLLER_6: u8 = 75;
+    pub const SOUND_CONTROLLER_7: u8 = 76;
+    pub const SOUND_CONTROLLER_8: u8 = 77;
+    pub const SOUND_CONTROLLER_9: u8 = 78;
+    pub const SOUND_CONTROLLER_10: u8 = 79;
+
+    // General Purpose 5-8 (80-83)
+    pub const GENERAL_PURPOSE_5: u8 = 80;
+    pub const GENERAL_PURPOSE_6: u8 = 81;
+    pub const GENERAL_PURPOSE_7: u8 = 82;
+    pub const GENERAL_PURPOSE_8: u8 = 83;
+
+    // Portamento Control (84)
+    pub const PORTAMENTO_CONTROL: u8 = 84;
+
+    // Effects (91-95)
+    pub const REVERB: u8 = 91; // Effects 1 Depth
+    pub const TREMOLO: u8 = 92; // Effects 2 Depth
+    pub const CHORUS: u8 = 93; // Effects 3 Depth
+    pub const CELESTE: u8 = 94; // Effects 4 Depth
+    pub const PHASER: u8 = 95; // Effects 5 Depth
+
+    // Data Increment/Decrement (96-97)
+    pub const DATA_INCREMENT: u8 = 96;
+    pub const DATA_DECREMENT: u8 = 97;
+
+    // Parameters (98-101)
+    pub const NRPN_LSB: u8 = 98;
+    pub const NRPN_MSB: u8 = 99;
+    pub const RPN_LSB: u8 = 100;
+    pub const RPN_MSB: u8 = 101;
+
+    // Channel Mode Messages (120-127)
+    pub const ALL_SOUND_OFF: u8 = 120;
+    pub const RESET_ALL_CONTROLLERS: u8 = 121;
+    pub const LOCAL_CONTROL: u8 = 122;
+    pub const ALL_NOTES_OFF: u8 = 123;
+    pub const OMNI_MODE_OFF: u8 = 124;
+    pub const OMNI_MODE_ON: u8 = 125;
+    pub const MONO_MODE_ON: u8 = 126;
+    pub const POLY_MODE_ON: u8 = 127;
+}
+
 pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
     let smf = match Smf::parse(data) {
         Ok(smf) => smf,
@@ -297,9 +391,13 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                             }
                             MidiMessage::Controller { controller, value } => {
                                 match controller.as_int() {
-                                    0 => track_state.bank_msb = u8::from(value),
-                                    32 => track_state.bank_lsb = u8::from(value),
-                                    6 => {
+                                    midi_cc::BANK_SELECT_MSB => {
+                                        track_state.bank_msb = u8::from(value)
+                                    }
+                                    midi_cc::BANK_SELECT_LSB => {
+                                        track_state.bank_lsb = u8::from(value)
+                                    }
+                                    midi_cc::DATA_ENTRY_MSB => {
                                         track_state.data_entry_msb = u8::from(value);
                                         if track_state.rpn_msb == 0 && track_state.rpn_lsb == 0 {
                                             track_state.pitch_bend_sensitivity =
@@ -307,7 +405,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                                     + track_state.data_entry_lsb as f32 / 100.0;
                                         }
                                     }
-                                    38 => {
+                                    midi_cc::DATA_ENTRY_LSB => {
                                         track_state.data_entry_lsb = u8::from(value);
                                         if track_state.rpn_msb == 0 && track_state.rpn_lsb == 0 {
                                             track_state.pitch_bend_sensitivity =
@@ -315,7 +413,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                                     + track_state.data_entry_lsb as f32 / 100.0;
                                         }
                                     }
-                                    7 => {
+                                    midi_cc::CHANNEL_VOLUME => {
                                         let vol = u8::from(value);
                                         track_state.volume = vol;
                                         let ch_id = channel.as_int();
@@ -326,8 +424,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                             }
                                         }
                                     }
-                                    1 => (), //track_state.modulation = u8::from(value),
-                                    10 => {
+                                    midi_cc::MODULATION => (), //track_state.modulation = u8::from(value),
+                                    midi_cc::PAN => {
                                         let pan_val = u8::from(value);
                                         track_state.pan = pan_val;
                                         let ch_id = channel.as_int();
@@ -337,20 +435,20 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                             }
                                         }
                                     }
-                                    11 => (), //track_state.expression = u8::from(value),
-                                    91 => (), //track_state.reverb = u8::from(value),
-                                    93 => (), //track_state.chorus = u8::from(value),
-                                    98 => {
+                                    midi_cc::EXPRESSION => (), //track_state.expression = u8::from(value),
+                                    midi_cc::REVERB => (), //track_state.reverb = u8::from(value),
+                                    midi_cc::CHORUS => (), //track_state.chorus = u8::from(value),
+                                    midi_cc::NRPN_LSB => {
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                     }
-                                    99 => {
+                                    midi_cc::NRPN_MSB => {
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                     }
-                                    100 => track_state.rpn_lsb = u8::from(value),
-                                    101 => track_state.rpn_msb = u8::from(value),
-                                    121 => {
+                                    midi_cc::RPN_LSB => track_state.rpn_lsb = u8::from(value),
+                                    midi_cc::RPN_MSB => track_state.rpn_msb = u8::from(value),
+                                    midi_cc::RESET_ALL_CONTROLLERS => {
                                         track_state.bank_msb = 0;
                                         track_state.bank_lsb = 0;
                                         track_state.volume = 100;
@@ -367,6 +465,12 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         println!(
                                             "controller: {} ({:?}) {:?}",
                                             cc_name, controller, value
+                                        );
+                                        crate::log!(
+                                            "controller: {} ({:?}) {:?}",
+                                            cc_name,
+                                            controller,
+                                            value
                                         );
                                     }
                                 }
