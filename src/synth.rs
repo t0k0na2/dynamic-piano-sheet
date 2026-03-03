@@ -58,6 +58,8 @@ impl SoundSource {
         pans: &[PanEvent],
         reverbs: &[crate::note::ReverbEvent],
         choruses: &[crate::note::ChorusEvent],
+        modulations: &[crate::note::ModulationEvent],
+        expressions: &[crate::note::ExpressionEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -79,6 +81,8 @@ impl SoundSource {
                 pans,
                 reverbs,
                 choruses,
+                modulations,
+                expressions,
                 pitch_bend_sensitivity,
                 channel,
                 program,
@@ -109,6 +113,8 @@ impl SoundSource {
         pans: &[PanEvent],
         reverbs: &[crate::note::ReverbEvent],
         choruses: &[crate::note::ChorusEvent],
+        modulations: &[crate::note::ModulationEvent],
+        expressions: &[crate::note::ExpressionEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -264,7 +270,10 @@ impl SoundSource {
         }
 
         let mut vib_lfo_osc = None;
-        if vib_lfo.to_pitch != 0.0 {
+        let init_mod = modulations.first().map(|v| v.modulation).unwrap_or(0);
+        let has_modulation = modulations.iter().any(|v| v.modulation > 0) || init_mod > 0;
+
+        if vib_lfo.to_pitch != 0.0 || has_modulation {
             let osc = context.create_oscillator()?;
             osc.set_type(web_sys::OscillatorType::Triangle);
             osc.frequency().set_value(vib_lfo.freq);
@@ -283,9 +292,28 @@ impl SoundSource {
         }
 
         if let Some(osc) = &vib_lfo_osc {
-            if vib_lfo.to_pitch != 0.0 {
+            if vib_lfo.to_pitch != 0.0 || has_modulation {
                 let p_gain = context.create_gain()?;
-                p_gain.gain().set_value(vib_lfo.to_pitch);
+
+                let calc_vib_pitch =
+                    |mod_val: u8| -> f32 { vib_lfo.to_pitch + (mod_val as f32 / 127.0) * 50.0 };
+
+                p_gain
+                    .gain()
+                    .set_value_at_time(calc_vib_pitch(init_mod), start_time)?;
+
+                let mod_on_time = modulations.first().map(|v| v.time).unwrap_or(0.0);
+                for event in modulations.iter().skip(1) {
+                    let event_time = start_time + (event.time - mod_on_time);
+                    if event_time > start_time {
+                        p_gain.gain().set_target_at_time(
+                            calc_vib_pitch(event.modulation),
+                            event_time,
+                            0.01,
+                        )?;
+                    }
+                }
+
                 osc.connect_with_audio_node(&p_gain)?;
                 p_gain.connect_with_audio_param(&source_detune)?;
                 lfo_nodes.push(p_gain.into());
@@ -489,7 +517,26 @@ impl SoundSource {
             }
         }
 
-        ch_vol_node.connect_with_audio_node(&pan_node)?;
+        let expr_vol_node = context.create_gain()?;
+        let init_expr_vol = expressions.first().map(|v| v.expression).unwrap_or(127);
+        expr_vol_node
+            .gain()
+            .set_value(Self::velocity_to_ratio(init_expr_vol) as f32);
+
+        let expr_on_time = expressions.first().map(|v| v.time).unwrap_or(0.0);
+        for event in expressions.iter().skip(1) {
+            let event_time = start_time + (event.time - expr_on_time);
+            if event_time > start_time {
+                expr_vol_node.gain().set_target_at_time(
+                    Self::velocity_to_ratio(event.expression) as f32,
+                    event_time,
+                    0.01,
+                )?;
+            }
+        }
+
+        ch_vol_node.connect_with_audio_node(&expr_vol_node)?;
+        expr_vol_node.connect_with_audio_node(&pan_node)?;
 
         pan_node.connect_with_audio_node(dry_send)?;
 
@@ -582,6 +629,7 @@ impl SoundSource {
             filter.into(),
             vca.into(),
             ch_vol_node.into(),
+            expr_vol_node.into(),
             pan_node.into(),
         ];
         final_nodes.extend(lfo_nodes);

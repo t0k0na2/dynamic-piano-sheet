@@ -30,6 +30,18 @@ pub struct ChorusEvent {
     pub chorus: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ModulationEvent {
+    pub time: f64,
+    pub modulation: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ExpressionEvent {
+    pub time: f64,
+    pub expression: u8,
+}
+
 #[derive(Clone)]
 pub struct Note {
     on_time: f64,
@@ -41,6 +53,8 @@ pub struct Note {
     pans: Vec<PanEvent>,
     reverbs: Vec<ReverbEvent>,
     choruses: Vec<ChorusEvent>,
+    modulations: Vec<ModulationEvent>,
+    expressions: Vec<ExpressionEvent>,
     pitch_bend_sensitivity: f32,
     track: u8,
     program: u8,
@@ -58,6 +72,8 @@ impl Note {
         pan: u8,
         reverb: u8,
         chorus: u8,
+        modulation: u8,
+        expression: u8,
         pitch_bend_sensitivity: f32,
         track: u8,
         program: u8,
@@ -84,6 +100,14 @@ impl Note {
             choruses: vec![ChorusEvent {
                 time: on_time,
                 chorus,
+            }],
+            modulations: vec![ModulationEvent {
+                time: on_time,
+                modulation,
+            }],
+            expressions: vec![ExpressionEvent {
+                time: on_time,
+                expression,
             }],
             pitch_bend_sensitivity,
             track,
@@ -145,6 +169,22 @@ impl Note {
 
     pub fn add_chorus(&mut self, time: f64, chorus: u8) {
         self.choruses.push(ChorusEvent { time, chorus });
+    }
+
+    pub fn modulations(&self) -> &Vec<ModulationEvent> {
+        &self.modulations
+    }
+
+    pub fn add_modulation(&mut self, time: f64, modulation: u8) {
+        self.modulations.push(ModulationEvent { time, modulation });
+    }
+
+    pub fn expressions(&self) -> &Vec<ExpressionEvent> {
+        &self.expressions
+    }
+
+    pub fn add_expression(&mut self, time: f64, expression: u8) {
+        self.expressions.push(ExpressionEvent { time, expression });
     }
 
     pub fn pitch_bend_sensitivity(&self) -> f32 {

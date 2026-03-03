@@ -286,6 +286,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         rpn_msb: u8,
         data_entry_lsb: u8,
         data_entry_msb: u8,
+        modulation: u8,
+        expression: u8,
         pitch_bend_sensitivity: f32,
     }
 
@@ -307,6 +309,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                 rpn_msb: 127,
                 data_entry_lsb: 0,
                 data_entry_msb: 2,
+                modulation: 0,
+                expression: 127,
                 pitch_bend_sensitivity: 2.0,
             }
         }
@@ -371,6 +375,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.pan,
                                         track_state.reverb,
                                         track_state.chorus,
+                                        track_state.modulation,
+                                        track_state.expression,
                                         track_state.pitch_bend_sensitivity,
                                         i as u8,
                                         track_state.program,
@@ -430,7 +436,17 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                             }
                                         }
                                     }
-                                    midi_cc::MODULATION => (), //track_state.modulation = u8::from(value),
+                                    midi_cc::MODULATION => {
+                                        let mod_val = u8::from(value);
+                                        track_state.modulation = mod_val;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id]
+                                                    .add_modulation(current_time, mod_val);
+                                            }
+                                        }
+                                    }
                                     midi_cc::PAN => {
                                         let pan_val = u8::from(value);
                                         track_state.pan = pan_val;
@@ -441,7 +457,19 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                             }
                                         }
                                     }
-                                    midi_cc::EXPRESSION => (), //track_state.expression = u8::from(value),
+                                    midi_cc::EXPRESSION => {
+                                        let expr_val = u8::from(value);
+                                        track_state.expression = expr_val;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id]
+                                                    .add_expression(current_time, expr_val);
+                                            }
+                                        }
+
+                                        crate::log!("Expression: {}", expr_val);
+                                    }
                                     midi_cc::REVERB => {
                                         let rv_val = u8::from(value);
                                         track_state.reverb = rv_val;
@@ -480,6 +508,8 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.pan = 64;
                                         track_state.reverb = 0;
                                         track_state.chorus = 0;
+                                        track_state.modulation = 0;
+                                        track_state.expression = 127;
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                         track_state.pitch_bend_sensitivity = 2.0;
@@ -944,6 +974,8 @@ impl MidiPlayer {
                     note.pans(),
                     note.reverbs(),
                     note.choruses(),
+                    note.modulations(),
+                    note.expressions(),
                     note.pitch_bend_sensitivity(),
                     note.track() + 1,
                     note.program(),
