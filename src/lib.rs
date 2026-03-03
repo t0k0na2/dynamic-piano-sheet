@@ -735,7 +735,6 @@ pub struct MidiPlayer {
     audio_context: AudioContext,
     reverb: ConvolverNode,
     chorus: ChorusNode,
-    comp: DynamicsCompressorNode,
     master_volume: GainNode,
     sound_sources: Vec<SoundSource>,
     bars: Vec<Bar>,
@@ -809,21 +808,16 @@ impl MidiPlayer {
         let master_volume = audio_context.create_gain()?;
         master_volume.connect_with_audio_node(&audio_context.destination())?;
 
-        // 音が重なるとノイズが気になるので出力の手前にコンプ刺す
-        let comp = audio_context.create_dynamics_compressor()?;
-        comp.connect_with_audio_node(&master_volume)?;
-
         let reverb = create_rich_synthesized_reverb(&audio_context, None, None, None)?;
-        reverb.connect_with_audio_node(&comp)?;
+        reverb.connect_with_audio_node(&master_volume)?;
 
         let chorus = ChorusNode::new(&audio_context, None, None, None, None)?;
-        chorus.connect_with_audio_node(&comp)?;
+        chorus.connect_with_audio_node(&master_volume)?;
 
         Ok(MidiPlayer {
             audio_context: audio_context,
             reverb: reverb,
             chorus: chorus,
-            comp: comp,
             master_volume: master_volume,
             bars: Vec::new(),
             notes: Vec::new(),
@@ -982,7 +976,7 @@ impl MidiPlayer {
                 let end_time = start_time + (note.off_time() - note.on_time());
                 self.sound_sources.push(SoundSource::new(
                     &self.audio_context,
-                    &self.comp,
+                    &self.master_volume,
                     &self.reverb,
                     self.chorus.input(),
                     note.key(),
