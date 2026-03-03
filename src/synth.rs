@@ -1,3 +1,4 @@
+use crate::note::PanEvent;
 use crate::note::PitchBendEvent;
 use crate::note::VolumeEvent;
 use crate::soundfont::{GeneratorOperator, SoundFont};
@@ -54,6 +55,7 @@ impl SoundSource {
         velocity: u8,
         channel_volumes: &[VolumeEvent],
         pitch_bends: &[PitchBendEvent],
+        pans: &[PanEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -72,6 +74,7 @@ impl SoundSource {
                 velocity,
                 channel_volumes,
                 pitch_bends,
+                pans,
                 pitch_bend_sensitivity,
                 channel,
                 program,
@@ -99,6 +102,7 @@ impl SoundSource {
         velocity: u8,
         channel_volumes: &[VolumeEvent],
         pitch_bends: &[PitchBendEvent],
+        pans: &[PanEvent],
         pitch_bend_sensitivity: f32,
         channel: u8,
         program: u8,
@@ -460,7 +464,25 @@ impl SoundSource {
         }
 
         let pan_node = context.create_stereo_panner()?;
-        pan_node.pan().set_value(pan_value);
+
+        let calc_pan_value = |note_pan: u8| -> f32 {
+            // MIDI pan 0-127, center is 64. Scale to -1.0 to 1.0
+            let note_pan_norm = (note_pan as f32 - 64.0) / 64.0;
+            (pan_value + note_pan_norm).clamp(-1.0, 1.0)
+        };
+
+        let pan_param = pan_node.pan();
+        let init_pan = pans.first().map(|v| v.pan).unwrap_or(64);
+        pan_param.set_value_at_time(calc_pan_value(init_pan), start_time)?;
+
+        let pan_on_time = pans.first().map(|v| v.time).unwrap_or(0.0);
+        for event in pans.iter().skip(1) {
+            let event_time = start_time + (event.time - pan_on_time);
+            if event_time > start_time {
+                pan_param.set_target_at_time(calc_pan_value(event.pan), event_time, 0.01)?;
+            }
+        }
+
         ch_vol_node.connect_with_audio_node(&pan_node)?;
 
         pan_node.connect_with_audio_node(dry_send)?;

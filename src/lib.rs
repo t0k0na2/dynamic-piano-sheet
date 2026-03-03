@@ -185,6 +185,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
         bank_lsb: u8,
         volume: u8,
         pitch_bend: i16,
+        pan: u8,
         rpn_lsb: u8,
         rpn_msb: u8,
         data_entry_lsb: u8,
@@ -203,6 +204,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                 bank_lsb: 0,
                 volume: 0,
                 pitch_bend: 0,
+                pan: 64, // Center default
                 rpn_lsb: 127,
                 rpn_msb: 127,
                 data_entry_lsb: 0,
@@ -268,6 +270,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         vel.as_int(),
                                         track_state.volume,
                                         track_state.pitch_bend,
+                                        track_state.pan,
                                         track_state.pitch_bend_sensitivity,
                                         i as u8,
                                         track_state.program,
@@ -323,8 +326,17 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                             }
                                         }
                                     }
-                                    1 => (),  //track_state.modulation = u8::from(value),
-                                    10 => (), //track_state.pan = u8::from(value),
+                                    1 => (), //track_state.modulation = u8::from(value),
+                                    10 => {
+                                        let pan_val = u8::from(value);
+                                        track_state.pan = pan_val;
+                                        let ch_id = channel.as_int();
+                                        for (&(ch, _), &note_id) in playing_notes.iter() {
+                                            if ch == ch_id {
+                                                notes[note_id].add_pan(current_time, pan_val);
+                                            }
+                                        }
+                                    }
                                     11 => (), //track_state.expression = u8::from(value),
                                     91 => (), //track_state.reverb = u8::from(value),
                                     93 => (), //track_state.chorus = u8::from(value),
@@ -343,6 +355,7 @@ pub fn parse_midi(data: &[u8]) -> Result<(Vec<Bar>, Vec<Note>, u8), String> {
                                         track_state.bank_lsb = 0;
                                         track_state.volume = 100;
                                         track_state.pitch_bend = 0;
+                                        track_state.pan = 64;
                                         track_state.rpn_lsb = 127;
                                         track_state.rpn_msb = 127;
                                         track_state.pitch_bend_sensitivity = 2.0;
@@ -791,6 +804,7 @@ impl MidiPlayer {
                     note.velocity(),
                     note.channel_volumes(),
                     note.pitch_bends(),
+                    note.pans(),
                     note.pitch_bend_sensitivity(),
                     note.track() + 1,
                     note.program(),

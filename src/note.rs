@@ -12,6 +12,12 @@ pub struct PitchBendEvent {
     pub bend: i16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PanEvent {
+    pub time: f64,
+    pub pan: u8,
+}
+
 #[derive(Clone)]
 pub struct Note {
     on_time: f64,
@@ -20,6 +26,7 @@ pub struct Note {
     velocity: u8,
     channel_volumes: Vec<VolumeEvent>,
     pitch_bends: Vec<PitchBendEvent>,
+    pans: Vec<PanEvent>,
     pitch_bend_sensitivity: f32,
     track: u8,
     program: u8,
@@ -34,6 +41,7 @@ impl Note {
         velocity: u8,
         channel_volume: u8,
         pitch_bend: i16,
+        pan: u8,
         pitch_bend_sensitivity: f32,
         track: u8,
         program: u8,
@@ -52,6 +60,7 @@ impl Note {
                 time: on_time,
                 bend: pitch_bend,
             }],
+            pans: vec![PanEvent { time: on_time, pan }],
             pitch_bend_sensitivity,
             track,
             program,
@@ -88,6 +97,14 @@ impl Note {
 
     pub fn add_pitch_bend(&mut self, time: f64, bend: i16) {
         self.pitch_bends.push(PitchBendEvent { time, bend });
+    }
+
+    pub fn pans(&self) -> &Vec<PanEvent> {
+        &self.pans
+    }
+
+    pub fn add_pan(&mut self, time: f64, pan: u8) {
+        self.pans.push(PanEvent { time, pan });
     }
 
     pub fn pitch_bend_sensitivity(&self) -> f32 {
